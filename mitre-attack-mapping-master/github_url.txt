@@ -1,0 +1,7 @@
+https://github.com/siriussecurity/mitre-attack-mapping
+
+Usage:
+-> python mitre_attack_mapping.py
+-> https://mitre.github.io/attack-navigator/enterprise/
+-> open exist layer
+-> endpoints.json & server.json
