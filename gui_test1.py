@@ -19,33 +19,34 @@ from PyQt5.QtWidgets import *
 # CAR-2013-04-002: Quick execution of a series of suspicious commands
 # TODO 각각의 exe가 어떤 ATT&CK 기법인지 판단이 잘 안됨...
 # TODO MITRE ATT&CK 홈페이지에서 Software 에 있는것들 확인후 채워넣기!
-# TODO str.split() 을 이용해서 - 이 특수문자로 나눠서 테크닉과 전술 구별하기!
+# TODO str.split() 을 이용해서 _ 이 특수문자로 나눠서 테크닉과 전술 구별하기!
+
 commands_of_interest = {
-    'arp.exe'       : ['System Network Configuration Discovery-Discovery'],
-    'at.exe'        : ['Scheduled Task-Persistence-Privilege Escalation-Execution'],
+    'arp.exe'       : ['System Network Configuration Discovery_Discovery'],
+    'at.exe'        : ['Scheduled Task_Persistence_Privilege Escalation_Execution'],
     'attrib.exe'    : [],
     'cscript.exe'   : [],
-    'dsquery.exe'   : ['Account Discovery-Discovery', 'Permission Groups Discovery-Discovery'],
-    'hostname.exe'  : ['System Network Configuration Discovery-Discovery'],
-    'ipconfig.exe'  : ['System Network Configuration Discovery-Discovery'],
-    'mimikatz.exe'  : ['Credential Dumping-Credential Access', 'Account Manipulation-Credential Access'],
-    'nbtstat.exe'   : ['System Network Configuration Discovery-Discovery', 'System Network Connections Discovery-Discovery'],
-    'net.exe'       : ['Account Discovery-Discovery', 'Permission Groups Discovery-Discovery', 'Remote System Discovery-Discovery', 'Service Execution-Execution', 'System Network Connections Discovery-Discovery', 'System Service Discovery-Discovery', 'Windows Admin Shares-Lateral Movement'],
-    'netsh.exe'     : ['Disabling Security Tools-Defense Evasion', 'Security Software Discovery-Discovery'],
+    'dsquery.exe'   : ['Account Discovery_Discovery', 'Permission Groups Discovery_Discovery'],
+    'hostname.exe'  : ['System Network Configuration Discovery_Discovery'],
+    'ipconfig.exe'  : ['System Network Configuration Discovery_Discovery'],
+    'mimikatz.exe'  : ['Credential Dumping_Credential Access', 'Account Manipulation_Credential Access'],
+    'nbtstat.exe'   : ['System Network Configuration Discovery_Discovery', 'System Network Connections Discovery_Discovery'],
+    'net.exe'       : ['Account Discovery_Discovery', 'Permission Groups Discovery_Discovery', 'Remote System Discovery_Discovery', 'Service Execution_Execution', 'System Network Connections Discovery_Discovery', 'System Service Discovery_Discovery', 'Windows Admin Shares_Lateral Movement'],
+    'netsh.exe'     : ['Disabling Security Tools_Defense Evasion', 'Security Software Discovery_Discovery'],
     'nslookup.exe'  : [],
-    'ping.exe'      : ['Remote System Discovery-Discovery', 'Network Service Scanning-Discovery'],
-    'quser.exe'     : ['System Network Connections Discovery-Discovery'],
+    'ping.exe'      : ['Remote System Discovery_Discovery', 'Network Service Scanning_Discovery'],
+    'quser.exe'     : ['System Network Connections Discovery_Discovery'],
     'qwinsta.exe'   : [],
-    'reg.exe'       : ['Modify Registry-Defense Evasion', 'Query Registry-Discovery', 'Service Registry Permissions Weakness-Persistence-Privilege Escalation'],
+    'reg.exe'       : ['Modify Registry_Defense Evasion', 'Query Registry_Discovery', 'Service Registry Permissions Weakness_Persistence_Privilege Escalation'],
     'runas.exe'     : [],
-    'sc.exe'        : ['Modify Existing Service-Persistence-Privilege Escalation', 'Service Registry Permissions Weakness-Persistence-Privilege Escalation'],
-    'schtasks.exe'  : ['Scheduled Task-Persistence-Privilege Escalation-Execution'],
+    'sc.exe'        : ['Modify Existing Service_Persistence', 'Service Registry Permissions Weakness_Persistence_Privilege Escalation'],
+    'schtasks.exe'  : ['Scheduled Task_Persistence_Privilege Escalation_Execution'],
     'ssh.exe'       : [],
-    'systeminfo.exe': ['System Information Discovery-Discovery', 'System Owner/User Discovery-Discovery'],
-    'taskkill.exe'  : ['Disabling Security Tools-Defense Evasion'],
+    'systeminfo.exe': ['System Information Discovery_Discovery', 'System Owner/User Discovery_Discovery'],
+    'taskkill.exe'  : ['Disabling Security Tools_Defense Evasion'],
     'telnet.exe'    : [],
-    'tracert.exe'   : ['Remote System Discovery-Discovery'],
-    'wscript.exe'   : ['Scripting-Defense Evasion-Execution'],
+    'tracert.exe'   : ['Remote System Discovery_Discovery'],
+    'wscript.exe'   : ['Scripting_Defense Evasion_Execution'],
     'xcopy.exe'     : []
 }
 
@@ -60,6 +61,10 @@ host_discovery_commands  = {
     'tasklist.exe'  : ['System Service Discovery', 'Process Discovery'],
     'whoami.exe'    : ['System Owner/User Discovery']
 }
+
+service_outlier_executables_history = {}
+
+outlier_parents_of_cmd_history = {}
 
 # CAR-2013-05-002: Suspicious Run Locations
 # cmd 에서 명령어 입력하고 출력값 받아오는 코드
@@ -83,6 +88,72 @@ def Utc_to_local(evt_utc_time):
     evt_local_time = utc.astimezone(to_zone)
 
     return evt_local_time
+
+def get_last_30_days_history():
+
+    count = 0
+
+    print("Get last 30 days history...")
+
+    today_time = datetime.datetime.now(tz.tzlocal())
+
+    path = "Microsoft-Windows-Sysmon/Operational"
+    handle = win32evtlog.EvtQuery( # Get event log
+                path,
+                win32evtlog.EvtQueryReverseDirection,
+                #"Event/System[EventID=5]",
+                #None
+            )
+
+    while 1:
+        events = win32evtlog.EvtNext(handle, 10)
+        if len(events) == 0:
+            # remove parsed events
+            # win32evtlog.ClearEventLog(handle, None): Access Violation (0xC0000005)
+            break
+        for event in events:
+            count += 1
+
+            if count % 1000 == 0:
+                print(count)
+
+
+            record = win32evtlog.EvtRender(event, win32evtlog.EvtRenderEventXml)
+            ##print(event)
+
+            # xml to dict
+            record_dict = xmltodict.parse(record)
+            # print(record_dict)
+
+            # UTC to Local Time
+            evt_local_time = Utc_to_local(record_dict['Event']['System']['TimeCreated']['@SystemTime'])
+            record_dict['Event']['System']['TimeCreated']['@SystemTime'] = evt_local_time
+
+            temp_data = {}
+            for data in record_dict['Event']['EventData']['Data']:
+                if '#text' in data:
+                    temp_data[data['@Name']] = data['#text']
+                elif data == None or data == 'None':
+                    temp_data = {}
+                else:
+                    temp_data[data['@Name']] = None
+            record_dict['Event']['EventData'] = temp_data
+
+            evt_id = int(record_dict['Event']['System']['EventID'])
+
+            if evt_local_time < today_time - datetime.timedelta(days=30):
+                return
+
+            if evt_id == 1:
+                image = str(record_dict['Event']['EventData']['Image'])
+                parent_image = str(record_dict['Event']['EventData']['ParentImage'])
+
+                if parent_image == "C:\\Windows\\System32\\services.exe":
+                    service_outlier_executables_history[image] = 0
+
+                if 'cmd.exe' in image:
+                    outlier_parents_of_cmd_history[parent_image] = 0
+
 
 def add_table_row(table, time, id, car_id, car_name):
 
@@ -219,6 +290,44 @@ def predict_group_or_sw(mainwindow, tech_list):
         if count == 10:
             break
 
+def change_interface(mainwindow, event_set, event_id, evt_local_time, tac_tech_list):
+    tac_list = []
+    tech_list = []
+
+    for elem in tac_tech_list:
+        tech_tac_split = elem.split('_')
+
+        tech_name = tech_tac_split[0]
+        tac_name = tech_tac_split[1]
+
+        tac_list.append(tac_name)
+        tech_list.append(tech_name)
+
+        mainwindow.tac_tech_events[tac_name][tech_name]['Events'][event_id] = event_set
+        append_to_event_dict(mainwindow.tac_tech_events[tac_name][tech_name]['Events'], event_id, event_set)
+        add_table_row(mainwindow.tac_tech_events[tac_name][tech_name]['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+        mainwindow.tac_tech_events[tac_name][tech_name]['Button'].setStyleSheet(mainwindow.detect_tech_button_style)
+
+    tac_list = list(set(tac_list))
+    tech_list = list(set(tech_list))
+
+    for elem in tac_list:
+    	mainwindow.tac_tech_events[elem]['Events'][event_id] = event_set
+    	append_to_event_dict(mainwindow.tac_tech_events[elem]['Events'], event_id, event_set)
+    	add_table_row(mainwindow.tac_tech_events[elem]['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+    	mainwindow.tac_tech_events[elem]['Button'].setStyleSheet(mainwindow.detect_tech_button_style)
+
+    # Detected Num Label (Home)
+    mainwindow.detected_num += 1
+    mainwindow.detected_num_label.setText('Detected Event Num : ' + str(mainwindow.detected_num))
+
+    # Home Detected Events
+    append_to_event_dict(mainwindow.home_detected_events, event_id, event_set)
+    home_add_table_row(mainwindow, evt_local_time, event_id, event_set)
+
+    # Predict Attacker
+    predict_group_or_sw(mainwindow, tech_list)
+
 # ===================================================================================================== #
 # ===================================================================================================== #
 
@@ -319,6 +428,8 @@ class Sysmon_evt (threading.Thread):
                         # TODO 그래서 powershell-log 를 바탕화면에 남겨서 거기서 확인할꺼임!
                         # TODO 원래 evt_id가 1일때 판단하는거였지만 내가 5로 바꿔서 판단했음!
 
+                        # TODO Powershell "Get-NetLocalGroupMember" 같은거 다 채워넣어야함... 어떤 tactic 이랑 technique 인지랑, 어떤 분석이랑 연관돼있는지 확인 필요!!!
+
                         image = str(record_dict['Event']['EventData']['Image'])
                         image_exe = image.split('\\')
                         image_exe = (image_exe[-1]).lower()
@@ -326,7 +437,7 @@ class Sysmon_evt (threading.Thread):
                         proc_id = record_dict['Event']['EventData']['ProcessId']
 
                         # CAR-2014-04-003: Powershell Execution
-                        # PowerShell - Defense Evasion
+                        # PowerShell - Execution
                         # Scripting - Defense Evasion
                         # https://car.mitre.org/analytics/CAR-2014-04-003
 
@@ -352,6 +463,11 @@ class Sysmon_evt (threading.Thread):
                                 event_set['Name'] = 'Powershell Execution'
                                 event_set['Event'] = [ps_dict['ps_start']]
                                 # TODO event_set['ps_command_line'] = ps_dict['ps_command_line']
+
+                                tac_tech_list = ['PowerShell_Execution', 'Scripting_Defense Evasion']
+                                change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                                """
 
                                 self.mainwindow.tac_tech_events['Defense Evasion']['Events'][event_id] = event_set
                                 self.mainwindow.tac_tech_events['Execution']['Events'][event_id] = event_set
@@ -386,6 +502,8 @@ class Sysmon_evt (threading.Thread):
                                 # Predict Attacker
                                 predict_group_or_sw(self.mainwindow, ['PowerShell', 'Scripting'])
 
+                                """
+
                                 # return_dict['mimikatz'] = 0
                                 # return_dict['get-netLlocalgroupmember'] = 0
                                 # return_dict['get-domaincomputer'] = 0
@@ -413,19 +531,19 @@ class Sysmon_evt (threading.Thread):
                                         all_tac_list = []
                                         all_tech_tac_list = []
                                         for elem in commands_of_interest['mimikatz.exe']:
-                                            elem_split = elem.split('-')
+                                            elem_split = elem.split('_')
                                             tmp_tech_name = elem_split[0]
                                             tmp_tac_list = elem_split[1:]
                                             for elem2 in tmp_tac_list:
-                                                all_tech_tac_list.append(elem + '-' + elem2)
+                                                all_tech_tac_list.append(elem + '_' + elem2)
                                                 all_tac_list.append(elem2)
 
                                         for elem in commands_of_interest[com_check[1][1]]:
-                                            elem_split = elem.split('-')
+                                            elem_split = elem.split('_')
                                             tmp_tech_name = elem_split[0]
                                             tmp_tac_list = elem_split[1:]
                                             for elem2 in tmp_tac_list:
-                                                all_tech_tac_list.append(elem + '-' + elem2)
+                                                all_tech_tac_list.append(elem + '_' + elem2)
                                                 all_tac_list.append(elem2)
 
                                         all_tac_list=list(set(all_tac_list))
@@ -437,7 +555,7 @@ class Sysmon_evt (threading.Thread):
                                         tmp_tech_list = []
                                         all_tech_tac_list=list(set(all_tech_tac_list))
                                         for elem in all_tech_tac_list:
-                                            tmp_list = elem.split('-')
+                                            tmp_list = elem.split('_')
                                             append_to_event_dict(self.mainwindow.tac_tech_events[tmp_list[1]][tmp_list[0]]['Events'], event_id, event_set)
                                             add_table_row(self.mainwindow.tac_tech_events[tmp_list[1]][tmp_list[0]]['Table'], evt_local_time, event_id, 'CAR-2013-04-002', 'Quick execution of a series of suspicious commands')
                                             self.mainwindow.tac_tech_events[tmp_list[1]][tmp_list[0]]['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
@@ -470,6 +588,11 @@ class Sysmon_evt (threading.Thread):
                                         event_set['Name'] = 'Suspicious Arguments'
                                         event_set['Event'] = [ps_dict['ps_start']]
 
+                                        tac_tech_list = ['Credential Dumping_Credential Access']
+                                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                                        """
+
                                         append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Events'], event_id, event_set)
                                         append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Events'], event_id, event_set)
 
@@ -489,6 +612,7 @@ class Sysmon_evt (threading.Thread):
 
                                         # Predict Attacker
                                         predict_group_or_sw(self.mainwindow, ['Credential Dumping'])
+                                        """
 
                                 if ps_dict['get-netLlocalgroupmember'] == 1:
                                     print('get-netLlocalgroupmember')
@@ -528,19 +652,19 @@ class Sysmon_evt (threading.Thread):
                                     all_tac_list = []
                                     all_tech_tac_list = []
                                     for elem in commands_of_interest[com_check[1][0]]:
-                                        elem_split = elem.split('-')
+                                        elem_split = elem.split('_')
                                         tmp_tech_name = elem_split[0]
                                         tmp_tac_list = elem_split[1:]
                                         for elem2 in tmp_tac_list:
-                                            all_tech_tac_list.append(elem + '-' + elem2)
+                                            all_tech_tac_list.append(elem + '_' + elem2)
                                             all_tac_list.append(elem2)
 
                                     for elem in commands_of_interest[com_check[1][1]]:
-                                        elem_split = elem.split('-')
+                                        elem_split = elem.split('_')
                                         tmp_tech_name = elem_split[0]
                                         tmp_tac_list = elem_split[1:]
                                         for elem2 in tmp_tac_list:
-                                            all_tech_tac_list.append(elem + '-' + elem2)
+                                            all_tech_tac_list.append(elem + '_' + elem2)
                                             all_tac_list.append(elem2)
 
                                     all_tac_list=list(set(all_tac_list))
@@ -552,7 +676,7 @@ class Sysmon_evt (threading.Thread):
                                     tmp_tech_list = []
                                     all_tech_tac_list=list(set(all_tech_tac_list))
                                     for elem in all_tech_tac_list:
-                                        tmp_list = elem.split('-')
+                                        tmp_list = elem.split('_')
                                         append_to_event_dict(self.mainwindow.tac_tech_events[tmp_list[1]][tmp_list[0]]['Events'], event_id, event_set)
                                         add_table_row(self.mainwindow.tac_tech_events[tmp_list[1]][tmp_list[0]]['Table'], evt_local_time, event_id, 'CAR-2013-04-002', 'Quick execution of a series of suspicious commands')
                                         self.mainwindow.tac_tech_events[tmp_list[1]][tmp_list[0]]['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
@@ -587,6 +711,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Create Remote Process via WMIC'
                             event_set['Event'] = [record_dict]
 
+                            tac_tech_list = ['Windows Management Instrumentation_Execution']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
                             append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Windows Management Instrumentation']['Events'], event_id, event_set)
 
@@ -607,6 +736,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Windows Management Instrumentation'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2014-07-001: Service Search Path Interception
@@ -626,6 +757,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2014-07-001'
                             event_set['Name'] = 'Service Search Path Interception'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Path Interception_Privilege Escalation', 'Path Interception_Persistence']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Path Interception']['Events'], event_id, event_set)
@@ -654,11 +790,12 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Path Interception'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2014-03-005: Remotely Launched Executables via Services
                         # New Service - Execution
-                        # Modify Existing Service - Execution
                         # Service Execution - Execution
                         # https://car.mitre.org/analytics/CAR-2014-03-005
 
@@ -672,19 +809,21 @@ class Sysmon_evt (threading.Thread):
                                 event_set['Name'] = 'Remotely Launched Executables via Services'
                                 event_set['Event'] = [record_dict, flow[1]]
 
+                                tac_tech_list = ['New Service_Execution', 'Service Execution_Execution']
+                                change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                                """
+
                                 append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
 
                                 append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['New Service']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Modify Existing Service']['Events'], event_id, event_set)
                                 append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Service Execution']['Events'], event_id, event_set)
 
                                 add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
                                 add_table_row(self.mainwindow.tac_tech_events['Execution']['New Service']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
-                                add_table_row(self.mainwindow.tac_tech_events['Execution']['Modify Existing Service']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
                                 add_table_row(self.mainwindow.tac_tech_events['Execution']['Service Execution']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
 
                                 self.mainwindow.tac_tech_events['Execution']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                                self.mainwindow.tac_tech_events['Execution']['Modify Existing Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
                                 self.mainwindow.tac_tech_events['Execution']['Service Execution']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
 
                                 self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
@@ -698,7 +837,9 @@ class Sysmon_evt (threading.Thread):
                                 home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
 
                                 # Predict Attacker
-                                predict_group_or_sw(self.mainwindow, ['New Service', 'Modify Existing Service', 'Service Execution'])
+                                predict_group_or_sw(self.mainwindow, ['New Service', 'Service Execution'])
+
+                                """
 
                         ##########################################################################################
 
@@ -715,6 +856,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2013-07-005'
                             event_set['Name'] = 'Command Line Usage of Archiving Software'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Data Compressed_Exfiltration']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Exfiltration']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Exfiltration']['Data Compressed']['Events'], event_id, event_set)
@@ -736,6 +882,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Data Compressed'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2013-05-004: Execution with AT
@@ -752,6 +900,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2013-05-004'
                             event_set['Name'] = 'Execution with AT'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Scheduled Task_Execution', 'Scheduled Task_Persistence', 'Scheduled Task_Privilege Escalation']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Scheduled Task']['Events'], event_id, event_set)
@@ -790,6 +943,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Scheduled Task'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2013-07-001: Suspicious Arguments
@@ -816,8 +971,23 @@ class Sysmon_evt (threading.Thread):
                         ip_addr = re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', com_line, re.M|re.I)
 
                         check_detected = False
+
+                        event_set = {}
+
+                        if putty or port_fwd or scp or mimikatz or rar or archive or ip_addr:
+                            event_set['ID'] = 'CAR-2013-07-001'
+                            event_set['Name'] = 'Suspicious Arguments'
+                            event_set['Event'] = [record_dict]
+
+                            check_detected = True
+
+                        tac_tech_list = []
+
                         if putty:
                             print('Suspicious Arguments : putty // Detected')
+
+                            tac_tech_list.append('Remote Services_Lateral Movement')
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Events'], event_id, event_set)
@@ -831,15 +1001,20 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Remote Services'])
 
-                            check_detected = True
+                            """
+
                         elif port_fwd:
                             print('Suspicious Arguments : port_fwd // Detected')
 
                             # TODO 어떤 Tactics 와 Techniques 인지 파악해야함!
 
-                            check_detected = True
                         elif scp:
                             print('Suspicious Arguments : scp // Detected')
+
+                            tac_tech_list.append('Remote File Copy_Lateral Movement')
+                            tac_tech_list.append('Remote File Copy_Command and Control')
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote File Copy']['Events'], event_id, event_set)
@@ -859,9 +1034,14 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Remote File Copy'])
 
-                            check_detected = True
+                            """
+
                         elif mimikatz:
                             print('Suspicious Arguments : mimikatz // Detected')
+
+                            tac_tech_list.append('Credential Dumping_Credential Access')
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Events'], event_id, event_set)
@@ -875,22 +1055,25 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Credential Dumping'])
 
-                            check_detected = True
+                            """
+
                         elif rar:
                             print('Suspicious Arguments : rar // Detected')
 
                             # TODO 어떤 Tactics 와 Techniques 인지 파악해야함!
                             
-                            check_detected = True
                         elif archive:
                             print('Suspicious Arguments : archive // Detected')
 
                             # TODO 어떤 Tactics 와 Techniques 인지 파악해야함!
                             
-                            check_detected = True
                         elif ip_addr:
                             print('Suspicious Arguments : ip_addr // Detected')
                             print('CommandLine : ' + com_line)
+
+                            tac_tech_list.append('Remote Services_Lateral Movement')
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Events'], event_id, event_set)
@@ -904,13 +1087,15 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Remote Services'])
 
-                            check_detected = True
+                            """
+
 
                         if check_detected == True:
-                            event_set = {}
-                            event_set['ID'] = 'CAR-2013-07-001'
-                            event_set['Name'] = 'Suspicious Arguments'
-                            event_set['Event'] = [record_dict]
+                        	
+                        	if len(tac_tech_list) != 0:
+                        		change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                        	"""
 
                             # Detected Num Label (Home)
                             self.mainwindow.detected_num += 1
@@ -919,6 +1104,8 @@ class Sysmon_evt (threading.Thread):
                             # Home Detected Events
                             append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
                             home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
+
+                            """
                             
                             
                             # TODO 전술이랑 테크닉을 어떻게 나눌지 고민해봐야함..
@@ -940,6 +1127,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2014-11-004'
                             event_set['Name'] = 'Remote PowerShell Sessions'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['PowerShell_Execution', 'Windows Remote Management_Lateral Movement']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['PowerShell']['Events'], event_id, event_set)
@@ -970,6 +1162,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['PowerShell', 'Windows Remote Management'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2013-05-002: Suspicious Run Locations
@@ -993,7 +1187,10 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Suspicious Run Locations'
                             event_set['Event'] = [record_dict]
 
+                            tac_tech_list = ['Masquerading_Defense Evasion']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            """
                             append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Masquerading']['Events'], event_id, event_set)
 
@@ -1013,11 +1210,12 @@ class Sysmon_evt (threading.Thread):
 
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Masquerading'])
+                            """
 
                         ##########################################################################################
 
                         # CAR-2014-11-003: Debuggers for Accessibility Applications
-                        # Accessibility Features - Privilege Escalation, Execution, Persistence
+                        # Accessibility Features - Privilege Escalation, Persistence
                         # https://car.mitre.org/analytics/CAR-2014-11-003
 
                         # TODO Document에서 Pseudocode는 (command_line match "$.* .*(sethcutilmanosknarratormagnify)\.exe") 이런식으로 표시했는데
@@ -1027,11 +1225,11 @@ class Sysmon_evt (threading.Thread):
                         # TODO 테스트 : cmd.exe Magnify.exe
 
                         if ( 
-                            re.search( r'.* .*sethc\.exe*', com_line, re.M|re.I) != None or
-                            re.search( r'.* .*utilman\.exe*', com_line, re.M|re.I) != None or
-                            re.search( r'.* .*osk\.exe*', com_line, re.M|re.I) != None or
-                            re.search( r'.* .*narrator\.exe*', com_line, re.M|re.I) != None or
-                            re.search( r'.* .*Magnify\.exe*', com_line, re.M|re.I) != None
+                            re.search( r'.* .*sethc\.exe.*', com_line, re.M|re.I) != None or
+                            re.search( r'.* .*utilman\.exe.*', com_line, re.M|re.I) != None or
+                            re.search( r'.* .*osk\.exe.*', com_line, re.M|re.I) != None or
+                            re.search( r'.* .*narrator\.exe.*', com_line, re.M|re.I) != None or
+                            re.search( r'.* .*Magnify\.exe.*', com_line, re.M|re.I) != None
                             ):
 
                             print('Debuggers for Accessibility Applications // Detected') 
@@ -1040,8 +1238,13 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Debuggers for Accessibility Applications'
                             event_set['Event'] = [record_dict]
 
+                            tac_tech_list = ['Accessibility Features_Privilege Escalation', 'Accessibility Features_Persistence']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
                             # TODO 각각 어느 전술이랑 어느 테크닉에 저장할지 다시 생각해보기!
                             # TODO Execution 에는 Accessibility Features 가 없는데 CAR에는 왜 Tactics에 Execution이 포함돼있지...?
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Events'], event_id, event_set)
@@ -1072,6 +1275,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Accessibility Features'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2014-03-006: RunDLL32.exe monitoring
@@ -1094,6 +1299,11 @@ class Sysmon_evt (threading.Thread):
                             # TODO tac_events 랑 tech_events로 나누면 안되고 나중에는 tac_events['Defense Evasion']['Rundll32'].append(~) 이런식으로 바꿔야함!
                             # TODO 이렇게 바꾸지 않으면 심각한 오류임!
 
+                            tac_tech_list = ['Rundll32_Defense Evasion']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
                             append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Rundll32']['Events'], event_id, event_set)
 
@@ -1113,6 +1323,8 @@ class Sysmon_evt (threading.Thread):
 
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Rundll32'])
+
+                            """
 
                         ##########################################################################################
 
@@ -1155,6 +1367,15 @@ class Sysmon_evt (threading.Thread):
 
                             tmp_tech_list = host_discovery_commands[image_exe]
 
+                            tac_tech_list = []
+
+                            for tech_elem in tmp_tech_list:
+                            	tac_tech_list.append(tech_elem + '_Discovery')
+
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
                             append_to_event_dict(self.mainwindow.tac_tech_events['Discovery']['Events'], event_id, event_set)
                             add_table_row(self.mainwindow.tac_tech_events['Discovery']['Table'], evt_local_time, event_id, 'CAR-2016-03-001', 'Host Discovery Commands')
                             self.mainwindow.tac_tech_events['Discovery']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
@@ -1176,6 +1397,8 @@ class Sysmon_evt (threading.Thread):
                             append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
                             home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2014-05-002: Services launching Cmd
@@ -1192,6 +1415,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2014-05-002'
                             event_set['Name'] = 'Services launching Cmd'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['New Service_Persistence', 'New Service_Privilege Escalation']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             self.mainwindow.tac_tech_events['Persistence']['Events'][event_id] = event_set
                             self.mainwindow.tac_tech_events['Privilege Escalation']['Events'][event_id] = event_set
@@ -1228,6 +1456,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['New Service'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2013-08-001: Execution with schtasks
@@ -1243,6 +1473,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2013-08-001'
                             event_set['Name'] = 'Execution with schtasks'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Scheduled Task_Persistence']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Events'], event_id, event_set)
@@ -1266,6 +1501,8 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Scheduled Task'])
 
+                            """
+
                         ##########################################################################################
 
                         # CAR-2014-11-008: Command Launched from WinLogon
@@ -1284,6 +1521,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['ID'] = 'CAR-2014-11-008'
                             event_set['Name'] = 'Command Launched from WinLogon'
                             event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Accessibility Features_Privilege Escalation', 'Accessibility Features_Persistence']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
 
                             self.mainwindow.tac_tech_events['Privilege Escalation']['Events'][event_id] = event_set
                             self.mainwindow.tac_tech_events['Persistence']['Events'][event_id] = event_set
@@ -1320,7 +1562,225 @@ class Sysmon_evt (threading.Thread):
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Accessibility Features'])
 
+                            """
+
                         ##########################################################################################
+
+                        # CAR-2013-03-001: Reg.exe called from Command Shell
+                        # Query Registry - Defense Evasion
+                        # Modify Registry - Persistence, Privilege Escalation
+                        # Registry Run Keys / Startup Folder - Persistence, Privilege Escalation
+                        # Service Registry Permissions Weakness - Persistence, Privilege Escalation
+                        # https://car.mitre.org/analytics/CAR-2013-03-001
+
+                        # TODO 실시간으로 어떤식으로 분석을 진행해야하는지 아직 잘 모르겠음.
+                        # TODO Pseudocode를 봤는데... 아마 이건 실시간으로 분석할수 있는게 아닌것같음..
+                        # TODO 로그인한 시간부터 분석을 테스트한 시간까지 쭉 쿼리해야됨
+
+                        # TODO 그렇게 안하고, 이 프로그램을 실행시키고 나서부터 해당 이벤트를 발견할때마다 list에 담는것임.
+                        # TODO 그다음 list 안에서 group이나 그런것 count(hostname) 이런거 파악해서 계산한다음에 展示 하면 됨!
+
+                        # 이 프로그램이 컴퓨터를 키면 바로 실행되는 시작프로그램으로 설정되어 있다고 가정하에 코딩하고있는 분석임!
+
+                        # TODO 테스트 : reg.exe QUERY HKLM\Software\Microsoft
+
+                        if (
+                            'reg.exe' == image_exe and
+                            'cmd.exe' == parent_image_exe
+                            ):
+
+                            cmd_proc = self.reg_called_from_command_shell(record_dict['Event']['EventData']['ParentProcessId'])
+
+                            print('Reg.exe called from Command Shell // Detected') 
+                            event_set = {}
+                            event_set['ID'] = 'CAR-2013-03-001'
+                            event_set['Name'] = 'Reg.exe called from Command Shell'
+                            event_set['Event'] = [record_dict, cmd_proc]
+
+                            tac_tech_list = ['Query Registry_Defense Evasion', 'Modify Registry_Persistence', 'Modify Registry_Privilege Escalation',
+                            'Registry Run Keys / Startup Folder_Persistence', 'Registry Run Keys / Startup Folder_Privilege Escalation',
+                            'Service Registry Permissions Weakness_Persistence', 'Service Registry Permissions Weakness_Privilege Escalation']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Query Registry']['Events'], event_id, event_set)
+
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Modify Registry']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Registry Run Keys / Startup Folder']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Service Registry Permissions Weakness']['Events'], event_id, event_set)
+
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Modify Registry']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Registry Run Keys / Startup Folder']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Service Registry Permissions Weakness']['Events'], event_id, event_set)
+                            
+
+                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Query Registry']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Modify Registry']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Registry Run Keys / Startup Folder']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Service Registry Permissions Weakness']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            
+                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Modify Registry']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Registry Run Keys / Startup Folder']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Service Registry Permissions Weakness']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
+
+                            self.mainwindow.tac_tech_events['Defense Evasion']['Query Registry']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+
+                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+                            self.mainwindow.tac_tech_events['Persistence']['Modify Registry']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Persistence']['Registry Run Keys / Startup Folder']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Persistence']['Service Registry Permissions Weakness']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            
+                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+                            self.mainwindow.tac_tech_events['Privilege Escalation']['Modify Registry']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Privilege Escalation']['Registry Run Keys / Startup Folder']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Privilege Escalation']['Service Registry Permissions Weakness']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+
+                            # Detected Num Label (Home)
+                            self.mainwindow.detected_num += 1
+                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
+
+                            # Home Detected Events
+                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
+                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
+
+                            # Predict Attacker
+                            predict_group_or_sw(self.mainwindow, ['Query Registry', 'Modify Registry', 'Registry Run Keys / Startup Folder', 'Service Registry Permissions Weakness'])
+
+                            """
+                        ###########################################################################################
+
+                        # CAR-2013-09-005: Service Outlier Executables
+                        # Modify Existing Service - Persistence, Privilege Escalation
+                        # New Service - Persistence, Privilege Escalation
+                        # https://car.mitre.org/analytics/CAR-2013-09-005
+
+                        # TODO 이건 실시간이 아니라 어느정도 텀을 둔 분석인듯!
+                        # TODO 그리고 Pseudocode 에서 "historic_services = filter services (where timestamp < now - 1 day AND timestamp > now - 1 day)" 이게 무슨뜻인지 못알아듣겠음...
+                        # Create a baseline of services seen over the last 30 days and a list of services seen today. Remove services in the baseline from services seen today, leaving a list of new services.
+                        # 지난 30일 동안 표시된 서비스의 기준선과 현재 표시된 서비스 목록을 생성하십시오. 현재 표시된 서비스에서 기준선에 있는 서비스를 제거하고 새 서비스 목록을 남긴다.
+                        # TODO 실시간 검사를 실행하기전에 30일동안의 historic_services 목록을 생성해놔야 할것 같음... (실시간 검사인것 같기도 하고...?)
+                        # TODO 아마 services.exe가 부모프로세스일때의 process created를 검사하는듯! 그리고 지난 30일동안의 historic_services 목록에 있는지 확인하는것일듯!
+                        # TODO 만약 저 목록에 없으면 출력!
+                        # TODO 생각해보니 1시간마다 검사해보는것도 나쁘진 않은것같고... 또 1시간은 너무 길어서 효과를 못볼것같기도하고..
+                        # TODO 아무튼 나중에 생각해보기!!
+
+                        # TODO 생각을바꿔서! parent_image_path 가 C:\\Windows\\System32\\services.exe 인 경우마다 검사를 하는것임!
+                        # TODO 그리고 지난 30일간의 그 리스트는 데이터베이스에 저장해놓고 필요할때마다 거기서 빼서 확인하고, 삽입하고, 삭제하고 하면 되듯!
+
+                        # TODO 매번 이 이벤트가 발생할때마다 30일 지난 history 삭제하기!
+
+                        # TODO 이거는... 미리 30일동안의 history를 만들어놔야할듯...?
+                        # TODO 그렇게 안하면 구현하기가 좀 복잡함..
+
+                        if parent_image == "C:\\Windows\\System32\\services.exe" and (image not in service_outlier_executables_history):
+
+                            # 이미 get_last_30_days_history 함수를 이용해서 지난 30일동안의 history를 다 받아왔음!
+
+                            print('Service Outlier Executables // Detected') 
+                            event_set = {}
+                            event_set['ID'] = 'CAR-2013-09-005'
+                            event_set['Name'] = 'Service Outlier Executables'
+                            event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Modify Existing Service_Persistence', 'Modify Existing Service_Privilege Escalation', 'New Service_Persistence', 'New Service_Privilege Escalation']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Modify Existing Service']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['New Service']['Events'], event_id, event_set)
+
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Events'], event_id, event_set)
+                            
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Modify Existing Service']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['New Service']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+                            
+                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+
+                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+                            self.mainwindow.tac_tech_events['Persistence']['Modify Existing Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Persistence']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                          
+                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+                            self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+
+                            # Detected Num Label (Home)
+                            self.mainwindow.detected_num += 1
+                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
+
+                            # Home Detected Events
+                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
+                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
+
+                            # Predict Attacker
+                            predict_group_or_sw(self.mainwindow, ['Modify Existing Service', 'New Service'])
+
+                            """
+
+                        
+
+                        ###########################################################################################
+
+                        # CAR-2014-11-002: Outlier Parents of Cmd
+                        # Command-Line Interface - Execution
+                        # https://car.mitre.org/analytics/CAR-2014-11-002
+
+                        # TODO 여기도 Pseudocode가 이상한것같음... (where timestamp < now - 1 day AND timestamp > now - 1 day) 이게 무슨뜻인지..
+                        # TODO 어떤말을 하고싶어하는지는 알겠음. 지난 30일동안 cmd의 parent_exe 목록을 만들고, 실시간검색으로 만약 지난 30일동안 나타나지 않았던 parent_exe가 나타나면 경고를 띄우는것.
+
+                        # 여기도 지난 30일동안의 history를 준비해놔야됨...
+
+                        if parent_image == "C:\\Windows\\System32\\services.exe" and (image not in service_outlier_executables_history):
+
+                            # 이미 get_last_30_days_history 함수를 이용해서 지난 30일동안의 history를 다 받아왔음!
+
+                            print('Outlier Parents of Cmd // Detected') 
+                            event_set = {}
+                            event_set['ID'] = 'CAR-2014-11-002'
+                            event_set['Name'] = 'Outlier Parents of Cmd'
+                            event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Command-Line Interface_Execution']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
+                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Command-Line Interface']['Events'], event_id, event_set)
+
+                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Command-Line Interface']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+
+                            self.mainwindow.tac_tech_events['Execution']['Command-Line Interface']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                            self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+
+                            # Detected Num Label (Home)
+                            self.mainwindow.detected_num += 1
+                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
+
+                            # Home Detected Events
+                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
+                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
+
+                            # Predict Attacker
+                            predict_group_or_sw(self.mainwindow, ['Command-Line Interface'])
+
+                            """
+
+                        ###########################################################################################
 
 
                     elif evt_id == 3:
@@ -1343,6 +1803,11 @@ class Sysmon_evt (threading.Thread):
                                 event_set['ID'] = 'CAR-2014-05-001'
                                 event_set['Name'] = 'RPC Activity'
                                 event_set['Event'] = [record_dict, rpc_mapper[1]]
+
+                                tac_tech_list = ['Valid Accounts_Lateral Movement', 'Remote Services_Lateral Movement']
+                                change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                                """
 
                                 append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                                 append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Events'], event_id, event_set)
@@ -1368,6 +1833,8 @@ class Sysmon_evt (threading.Thread):
                                 # Predict Attacker
                                 predict_group_or_sw(self.mainwindow, ['Valid Accounts', 'Remote Services'])
 
+                                """
+
                         ##########################################################################################
 
                         # CAR-2014-11-006: Windows Remote Management (WinRM)
@@ -1385,10 +1852,13 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Windows Remote Management (WinRM)'
                             event_set['Event'] = [record_dict, rpc_mapper[1]]
 
+                            tac_tech_list = ['Windows Remote Management_Lateral Movement']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            """
+
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                             append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Events'], event_id, event_set)
-
-                            
 
                             add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2014-11-006', 'Windows Remote Management (WinRM)')
                             add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Table'], evt_local_time, event_id, 'CAR-2014-11-006', 'Windows Remote Management (WinRM)')
@@ -1407,24 +1877,12 @@ class Sysmon_evt (threading.Thread):
 
                             # Predict Attacker
                             predict_group_or_sw(self.mainwindow, ['Windows Remote Management'])
+
+                            """
                             
 
 
                     ###########################################################################################
-
-                    # CAR-2013-03-001: Reg.exe called from Command Shell
-                    # Query Registry - Defense Evasion
-                    # Modify Registry - Persistence, Privilege Escalation
-                    # Registry Run Keys / Startup Folder - Persistence, Privilege Escalation
-                    # Service Registry Permissions Weakness - Persistence, Privilege Escalation
-                    # https://car.mitre.org/analytics/CAR-2013-03-001
-
-                    # TODO 실시간으로 어떤식으로 분석을 진행해야하는지 아직 잘 모르겠음.
-                    # TODO Pseudocode를 봤는데... 아마 이건 실시간으로 분석할수 있는게 아닌것같음..
-                    # TODO 로그인한 시간부터 분석을 테스트한 시간까지 쭉 쿼리해야됨
-
-                    # TODO 테스트 : reg.exe QUERY HKLM\Software\Microsoft
-
 
                     # CAR-2015-04-002: Remotely Scheduled Tasks via Schtasks
                     # Scheduled Task - Execution
@@ -1432,6 +1890,8 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO Pseudocode를 이해를 못하겠음.. proto_info.rpc_interface가 뭘 뜻하는거지..?
                     # TODO ㄴ proto_info.rpc_interface는 지금 상황에선 모니터링 기능을 충족시켜주는 모니터링 툴이 없어서 탐지 불가...
+
+                    ###########################################################################################
 
                     # CAR-2013-10-002: DLL Injection via Load Library
                     # Process Injection - Defense Evasion
@@ -1447,37 +1907,22 @@ class Sysmon_evt (threading.Thread):
                     #    print("DLL Injection via Load Library // Detected")
                     # TODO Thread 에 관한 예제는 찾았지만 Path To TrustedProgram 을 구별 불가능!!
 
+                    ###########################################################################################
+
                     # CAR-2014-11-005: Remote Registry
                     # Modify Registry - Lateral Movement, Defense Evasion
                     # https://car.mitre.org/analytics/CAR-2014-11-005
 
                     # proto_info를 sysmon은 탐지 못함... CAR에 나와있는 내용 봤는데 아직 탐지가능한 툴이 없는듯.. (https://car.mitre.org/data_model/flow#proto_info)
 
-                    
+                    ###########################################################################################
 
                     # CAR-2014-03-001: SMB Write Request - NamedPipes
                     # https://car.mitre.org/analytics/CAR-2014-03-001
 
                     # TODO 이것도 proto_info 를 어디서 어떻게 받아오는지 모르겠음...
 
-                    # CAR-2013-09-005: Service Outlier Executables
-                    # Modify Existing Service - Persistence, Privilege Escalation
-                    # New Service - Persistence, Privilege Escalation
-                    # https://car.mitre.org/analytics/CAR-2013-09-005
-
-                    #if str(record_dict['Event']['System']['EventID']) == str(1) and
-                    #    str(record_dict['Event']['EventData']['ParentImage']) == "C:\\Windows\\System32\\services.exe"
-
-                    # TODO 이건 실시간이 아니라 어느정도 텀을 둔 분석인듯!
-                    # TODO 그리고 Pseudocode 에서 "historic_services = filter services (where timestamp < now - 1 day AND timestamp > now - 1 day)" 이게 무슨뜻인지 못알아듣겠음...
-                    # Create a baseline of services seen over the last 30 days and a list of services seen today. Remove services in the baseline from services seen today, leaving a list of new services.
-                    # 지난 30일 동안 표시된 서비스의 기준선과 현재 표시된 서비스 목록을 생성하십시오. 현재 표시된 서비스에서 기준선에 있는 서비스를 제거하고 새 서비스 목록을 남긴다.
-                    # TODO 실시간 검사를 실행하기전에 30일동안의 historic_services 목록을 생성해놔야 할것 같음... (실시간 검사인것 같기도 하고...?)
-                    # TODO 아마 services.exe가 부모프로세스일때의 process created를 검사하는듯! 그리고 지난 30일동안의 historic_services 목록에 있는지 확인하는것일듯!
-                    # TODO 만약 저 목록에 없으면 출력!
-                    # TODO 생각해보니 1시간마다 검사해보는것도 나쁘진 않은것같고... 또 1시간은 너무 길어서 효과를 못볼것같기도하고..
-                    # TODO 아무튼 나중에 생각해보기!!
-
+                    ###########################################################################################
 
                     # CAR-2013-05-005: SMB Copy and Execution
                     # Windows Admin Shares - Lateral Movement
@@ -1486,6 +1931,8 @@ class Sysmon_evt (threading.Thread):
                     # https://car.mitre.org/analytics/CAR-2013-05-005
 
                     # TODO 이 분석을 진행하려면 "CAR-2013-05-003" 이 분석 내용이 필요한데, "CAR-2013-05-003"분석은 proto_info를 필요로함.. sysmon으로는 얻을수 없는 정보..
+
+                    ###########################################################################################
 
                     # CAR-2013-02-003: Processes Spawning cmd.exe
                     # Command-Line Interface - Execution
@@ -1498,6 +1945,7 @@ class Sysmon_evt (threading.Thread):
                     # TODO 이건 너무 광범위한것같음... 그냥 cmd만 나오면 바로 출력을시켜버리니...
                     # TODO Document에는 abnormal parent process가 cmd를 실행시키면, 이라고 나와있는데 abnormal parent가 뭔지 모르겠음..
 
+                    ###########################################################################################
 
                     # CAR-2014-11-007: Remote Windows Management Instrumentation (WMI) over RPC
                     # Windows Management Instrumentation - Lateral Movement
@@ -1505,6 +1953,7 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO proto_info....
 
+                    ###########################################################################################
 
                     # CAR-2013-07-002: RDP Connection Detection
                     # Remote Desktop Protocol - Lateral Movement
@@ -1512,10 +1961,14 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO network connection start는 sysmon 이벤트 로그에 남는데 end는 안남는것같음...
 
+                    ###########################################################################################
+
                     # CAR-2013-09-003: SMB Session Setups
                     # https://car.mitre.org/analytics/CAR-2013-09-003
 
                     # TODO proto_info를 어디서 찾을수 있을까나...
+
+                    ###########################################################################################
 
                     # CAR-2013-05-003: SMB Write Request
                     # Remote File Copy - Lateral Movement
@@ -1524,12 +1977,7 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO proto_info...... 어떻게 찾지..
 
-                    # CAR-2014-11-002: Outlier Parents of Cmd
-                    # Command-Line Interface - Execution
-                    # https://car.mitre.org/analytics/CAR-2014-11-002
-
-                    # TODO 여기도 Pseudocode가 이상한것같음... (where timestamp < now - 1 day AND timestamp > now - 1 day) 이게 무슨뜻인지..
-                    # TODO 어떤말을 하고싶어하는지는 알겠음. 지난 30일동안 cmd의 parent_exe 목록을 만들고, 실시간검색으로 만약 지난 30일동안 나타나지 않았던 parent_exe가 나타나면 경고를 띄우는것.
+                    ###########################################################################################
 
                     # CAR-2014-02-001: Service Binary Modifications
                     # New Service - Persistence, Privilege Escalation   Moderate
@@ -1540,6 +1988,8 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO Autoruns가 있어야 가능함..
 
+                    ###########################################################################################
+
                     # CAR-2013-01-003: SMB Events Monitoring
                     # Valid Accounts - Lateral Movement
                     # Data from Network Shared Drive - Exfiltration
@@ -1548,17 +1998,22 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO proto_info....
 
+                    ###########################################################################################
+
                     # CAR-2015-04-001: Remotely Scheduled Tasks via AT
                     # Scheduled Task - Execution
                     # https://car.mitre.org/analytics/CAR-2015-04-001
 
                     # TODO proto_info....
 
+                    ###########################################################################################
+
                     # CAR-2013-01-002: Autorun Differences
                     # https://car.mitre.org/analytics/CAR-2013-01-002
 
                     # TODO Autorun에 대한 설명인가..?
 
+                    ###########################################################################################
 
                     # CAR-2014-12-001: Remotely Launched Executables via WMI
                     # Windows Management Instrumentation - Execution
@@ -1566,11 +2021,60 @@ class Sysmon_evt (threading.Thread):
 
                     # TODO proto_info....
 
+                    ###########################################################################################
+
                     # CAR-2013-05-009: Running executables with same hash and different names
                     # Masquerading - Defense Evasion
                     # https://car.mitre.org/analytics/CAR-2013-05-009
 
                     # Output Description : A list of hashes and the different executables associated with each one
+
+                    ###########################################################################################
+
+    def reg_called_from_command_shell(self, ppid):
+
+        path = "Microsoft-Windows-Sysmon/Operational"
+        handle = win32evtlog.EvtQuery( # Get event log
+                        path,
+                        win32evtlog.EvtQueryReverseDirection,
+                        #"Event/System[EventID=5]",
+                        #None
+                    )
+
+        while 1:
+            events = win32evtlog.EvtNext(handle, 10)
+            if len(events) == 0:
+                return (False, None)
+            for event in events:
+                record = win32evtlog.EvtRender(event, win32evtlog.EvtRenderEventXml)
+
+                # xml to dict
+                cmd_proc = xmltodict.parse(record)
+
+                # 변수 설정
+                evt_id = int(cmd_proc['Event']['System']['EventID'])
+
+                # UTC to Local Time
+                evt_local_time = Utc_to_local(cmd_proc['Event']['System']['TimeCreated']['@SystemTime'])
+                cmd_proc['Event']['System']['TimeCreated']['@SystemTime'] = evt_local_time
+
+                # cmd_proc 의 EventData 의 value 값 수정하기... Data - name - text 이런식으로 돼있어서 인덱스하기 힘듦...!
+                temp_data = {}
+                for data in cmd_proc['Event']['EventData']['Data']:
+                    if '#text' in data:
+                        temp_data[data['@Name']] = data['#text']
+                    elif data == None or data == 'None':
+                        temp_data = {}
+                    else:
+                        temp_data[data['@Name']] = None
+                cmd_proc['Event']['EventData'] = temp_data
+                # print(temp_data)
+
+                if (
+                    evt_id == 1 and 
+                    ppid == cmd_proc['Event']['EventData']['ProcessId']
+                    ):
+                    return cmd_proc
     
 
     def get_ps_info(self, proc_id):
@@ -1975,6 +2479,11 @@ class System_evt (threading.Thread):
                         event_set['Name'] = 'User Activity from Stopping Windows Defensive Services'
                         event_set['Event'] = [record_dict]
 
+                        tac_tech_list = ['Indicator Blocking_Defense Evasion']
+                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                        """
+
                         append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
                         append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Events'], event_id, event_set)
 
@@ -1995,6 +2504,8 @@ class System_evt (threading.Thread):
 
                         # Predict Attacker
                         predict_group_or_sw(self.mainwindow, ['Indicator Blocking'])
+
+                        """
                         
                     ##########################################################################################
 
@@ -2014,6 +2525,11 @@ class System_evt (threading.Thread):
                         event_set['ID'] = 'CAR-2016-04-002'
                         event_set['Name'] = 'User Activity from Clearing Event Logs'
                         event_set['Event'] = [record_dict]
+
+                        tac_tech_list = ['Indicator Blocking_Defense Evasion']
+                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                        """
 
                         append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
                         append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Events'], event_id, event_set)
@@ -2036,6 +2552,8 @@ class System_evt (threading.Thread):
 
                         # Predict Attacker
                         predict_group_or_sw(self.mainwindow, ['Indicator Blocking'])
+
+                        """
 
 # ===================================================================================================== #
 # ===================================================================================================== #
@@ -2137,6 +2655,11 @@ class Security_evt (threading.Thread):
                         event_set['Name'] = 'Remote Desktop Logon'
                         event_set['Event'] = [record_dict]
 
+                        tac_tech_list = ['Valid Accounts_Lateral Movement']
+                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                        """
+
                         append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                         append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Events'], event_id, event_set)
 
@@ -2159,24 +2682,7 @@ class Security_evt (threading.Thread):
                         # Predict Attacker
                         predict_group_or_sw(self.mainwindow, ['Valid Accounts'])
 
-                    ##########################################################################################
-
-
-                    # CAR-2013-02-008: Simultaneous Logins on a Host
-                    # Lateral Movement - Valid Accounts
-                    # https://car.mitre.org/analytics/CAR-2013-02-008
-
-                    #TODO 지금까지의 로그인 내역을 다 받아온다음, 호스트 네임별로 유저 리스트를 그룹 지음.
-                    # 그리고 각 그룹마다 제일 처음 로그인 한 시간, 그리고 제일 나중에 로그인 한 시간을 저장하고
-                    # 로그인 시도 횟수도 같이 저장함.
-                    # 그 다음 그 정보들을 통해서 latest_time - earliest_time <= 1 hour and user_count > 1 조건을 찾음
-                    # 찾으면 그게 바로 Simultaneous Logins on a Host 임!
-
-                    # TODO 아니면 매번 Logon 이벤트를 발견 할떄마다 1시간 안에 똑같은 로그인 활동이 발생했는지 알아보면 될듯!
-                    # ㄴ 너무 시간이 오래 걸릴듯...
-                    # ㄴ 차라리 데이터베이스에다가 하나하나씩 저장하면서 확인하는게 빠를듯... 이렇게 하면 나중에는 결국 많이 확인 안해도 될듯.
-
-                    # TODO 나중에 데이터베이스 설정하고 구현하기!
+                        """
 
                     ##########################################################################################
 
@@ -2197,6 +2703,11 @@ class Security_evt (threading.Thread):
                         event_set['ID'] = 'CAR-2016-04-004'
                         event_set['Name'] = 'Successful Local Account Login'
                         event_set['Event'] = [record_dict]
+
+                        tac_tech_list = ['Pass the Hash_Lateral Movement']
+                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                        """
 
                         append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
                         append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Pass the Hash']['Events'], event_id, event_set)
@@ -2219,21 +2730,7 @@ class Security_evt (threading.Thread):
                         # Predict Attacker
                         predict_group_or_sw(self.mainwindow, ['Pass the Hash'])
 
-                    ##########################################################################################
-
-                    # CAR-2015-07-001: All Logins Since Last Boot
-                    # https://car.mitre.org/analytics/CAR-2015-07-001
-
-                    # TODO 이건 아마 mimikatz가 실행된걸 발견하고 난 다음에 target_host랑 event_time을 입력해서
-                    # TODO 해당 mimikatz를 발견한 호스트 외에 lateral movement에 의해 피해를 입었을수도 있는 유저들에 대해 조사하는듯!
-                    # TODO Security 이벤트 로그중에 EventID 가 4648인 Logon 로그 유의하기!! mimikatz와 연관있는것같음!
-
-                    # CAR-2013-10-001: User Login Activity Monitoring
-                    # Remote Desktop Protocol - Lateral Movement
-                    # Valid Accounts - Defense Evasion
-                    # https://car.mitre.org/analytics/CAR-2013-10-001
-
-                    # Output Description : The time of login events for distinct users on individual systems
+                        """
 
                     ##########################################################################################
 
@@ -2250,6 +2747,11 @@ class Security_evt (threading.Thread):
                         event_set['ID'] = 'CAR-2016-04-002'
                         event_set['Name'] = 'User Activity from Clearing Event Logs'
                         event_set['Event'] = [record_dict]
+
+                        tac_tech_list = ['Indicator Blocking_Defense Evasion']
+                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                        """
 
                         append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
                         append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Events'], event_id, event_set)
@@ -2271,6 +2773,54 @@ class Security_evt (threading.Thread):
 
                         # Predict Attacker
                         predict_group_or_sw(self.mainwindow, ['Remote Desktop Protocol', 'Valid Accounts'])
+
+                        """
+
+                    ##########################################################################################
+
+                    # CAR-2015-07-001: All Logins Since Last Boot
+                    # https://car.mitre.org/analytics/CAR-2015-07-001
+
+                    # TODO 이건 아마 mimikatz가 실행된걸 발견하고 난 다음에 target_host랑 event_time을 입력해서
+                    # TODO 해당 mimikatz를 발견한 호스트 외에 lateral movement에 의해 피해를 입었을수도 있는 유저들에 대해 조사하는듯!
+                    # TODO Security 이벤트 로그중에 EventID 가 4648인 Logon 로그 유의하기!! mimikatz와 연관있는것같음!
+
+                    # TODO 이것도 login Action에 대해 파악할 수 있는 모니터링 툴이 부족함...
+
+                    ##########################################################################################
+
+                    # CAR-2013-02-008: Simultaneous Logins on a Host
+                    # Lateral Movement - Valid Accounts
+                    # https://car.mitre.org/analytics/CAR-2013-02-008
+
+                    #TODO 지금까지의 로그인 내역을 다 받아온다음, 호스트 네임별로 유저 리스트를 그룹 지음.
+                    # 그리고 각 그룹마다 제일 처음 로그인 한 시간, 그리고 제일 나중에 로그인 한 시간을 저장하고
+                    # 로그인 시도 횟수도 같이 저장함.
+                    # 그 다음 그 정보들을 통해서 latest_time - earliest_time <= 1 hour and user_count > 1 조건을 찾음
+                    # 찾으면 그게 바로 Simultaneous Logins on a Host 임!
+
+                    # TODO 아니면 매번 Logon 이벤트를 발견 할떄마다 1시간 안에 똑같은 로그인 활동이 발생했는지 알아보면 될듯!
+                    # ㄴ 너무 시간이 오래 걸릴듯...
+                    # ㄴ 차라리 데이터베이스에다가 하나하나씩 저장하면서 확인하는게 빠를듯... 이렇게 하면 나중에는 결국 많이 확인 안해도 될듯.
+
+                    # TODO 나중에 데이터베이스 설정하고 구현하기!
+
+                    # TODO 실시간으로 할수 있을것같음!
+                    # TODO 이것도 시작 프로그램으로 설정됬다고 치고!
+                    # TODO 매번 interest 한 Login 이 생겼을때마다 dict 에 넣음! 이때 key는 hostname 이고! value는 이벤트 list!
+                    # TODO 그리고 매번 실시간으로 로그인이 생길때마다 확인하는것임! 그리고 이때 1시간 차이가 넘어가는 이벤트는 다 삭제해야됨!
+                    # TODO User_count는 len(list)로 해결하면 될것같음!
+
+                    # TODO 보니까 이것도 coverage map이 텅텅 비어있음... 모니터링 툴이 부족한듯!
+                    
+                    ##########################################################################################
+
+                    # CAR-2013-10-001: User Login Activity Monitoring
+                    # Remote Desktop Protocol - Lateral Movement
+                    # Valid Accounts - Defense Evasion
+                    # https://car.mitre.org/analytics/CAR-2013-10-001
+
+                    # Output Description : The time of login events for distinct users on individual systems
                         
 
 
@@ -3575,6 +4125,8 @@ class MainWindow(QTabWidget):
 
  
 if __name__ == "__main__":
+    get_last_30_days_history()
+
     app = QApplication(sys.argv)
     mainwindow = MainWindow()
     mainwindow.show()
