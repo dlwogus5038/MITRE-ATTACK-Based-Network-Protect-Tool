@@ -9,6 +9,8 @@ import re
 import json
 import os
 import codecs
+# import pythoncom
+# import wmi
 from dateutil import tz
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -37,7 +39,7 @@ commands_of_interest = {
     'ping.exe'      : ['Remote System Discovery_Discovery', 'Network Service Scanning_Discovery'],
     'quser.exe'     : ['System Network Connections Discovery_Discovery'],
     'qwinsta.exe'   : [],
-    'reg.exe'       : ['Modify Registry_Defense Evasion', 'Query Registry_Discovery', 'Service Registry Permissions Weakness_Persistence_Privilege Escalation'],
+    'reg.exe'       : ['Modify Registry_Defense Evasion', 'Query Registry_Discovery', 'Service Registry Permissions Weakness_Persistence_Privilege Escalation', 'Security Software Discovery_Discovery'],
     'runas.exe'     : [],
     'sc.exe'        : ['Modify Existing Service_Persistence', 'Service Registry Permissions Weakness_Persistence_Privilege Escalation'],
     'schtasks.exe'  : ['Scheduled Task_Persistence_Privilege Escalation_Execution'],
@@ -330,12 +332,36 @@ def change_interface(mainwindow, event_set, event_id, evt_local_time, tac_tech_l
     # Predict Attacker
     predict_group_or_sw(mainwindow, tech_list)
 
-    # Home Suspicious Parent
-    add_suspicious_parent(mainwindow, event_set)
+'''
+def search_parent_process(proc_id):
+    pythoncom.CoInitialize()
+    wmi_go = wmi.GetObject(r"winmgmts:")
+    processes = wmi_go.InstancesOf('Win32_Process')
+    for process in processes:
+        pid = process.Properties_('ProcessID').Value
+        parent = process.Properties_('ParentProcessId').Value
+        path = process.Properties_('ExecutablePath').Value
+        # name = process.Properties_('Caption')
+        
+        if (str(pid) == str(proc_id)) and (path != None):
+            print('catch!!')
+            pythoncom.CoUninitialize ()
+            return (True, (parent, path))
+
+    pythoncom.CoUninitialize ()
+    print('false..')
+    return (False, '')
+'''
+
 
 def add_suspicious_parent(mainwindow, event_set):
+
+    # 의심할만한 이벤트의 부모를 찾는 함수! 
+
     parent_pid = event_set['Event'][0]['Event']['EventData']['ParentProcessId']
     parent_image = event_set['Event'][0]['Event']['EventData']['ParentImage']
+
+    # suspicious_parent dictionary 에 parent_pid와 parent_image 둘다 포함되어 있는지 확인!
     check_insert = False
 
     if parent_pid not in suspicious_parent:
@@ -376,6 +402,19 @@ def add_suspicious_parent(mainwindow, event_set):
 
         QTableWidget.resizeColumnsToContents(home_table)
         QTableWidget.resizeRowsToContents(home_table)
+
+    '''
+
+    # Parent의 Parent를 계속 찾아보기!!
+    # ㄴ Process들이 너무 빨리 생성됬다가 너무 빨리 사라져서 남아있는 parent process를 찾기가 힘듦...
+    # ㄴ 그래서 찾으려면 Sysmon 이벤트에서 찾아야하는데... parent 중에 아주 예전부터 생성되있던 프로세스(process id가 엄청 낮은것들...)들은 현재 이벤트에 남아있지 않음...
+    # ㄴ 그래서 현재 이벤트에 남아있지 않기때문에 추적 불가능..
+
+    search_result = search_parent_process(parent_pid)
+    if search_result[0] == True:
+        add_suspicious_parent(mainwindow, event_set, search_result[1][0], search_result[1][1])
+    '''
+
 
 
 # ===================================================================================================== #
@@ -517,9 +556,12 @@ class Sysmon_evt (threading.Thread):
                                 tac_tech_list = ['PowerShell_Execution', 'Scripting_Defense Evasion']
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                                # Home Suspicious Parent
+                                add_suspicious_parent(mainwindow, event_set)
+
 
                                 # return_dict['mimikatz'] = 0
-                                # return_dict['get-netLlocalgroupmember'] = 0
+                                # return_dict['get-netlocalgroupmember'] = 0
                                 # return_dict['get-domaincomputer'] = 0
                                 # return_dict['ps_start'] = ps_start
                                 # return_dict['ps_command_line'] = ''.join(lines)
@@ -530,10 +572,9 @@ class Sysmon_evt (threading.Thread):
                                     #############################################################################################
 
                                     # CAR-2013-04-002: Quick execution of a series of suspicious commands
-                                    # 너무 많음...
                                     # https://car.mitre.org/analytics/CAR-2013-04-002
 
-                                    com_check = self.Quick_execution_of_a_series_of_suspicious_commands(record_dict)
+                                    com_check = self.Quick_execution_of_a_series_of_suspicious_commands(ps_dict['ps_start'])
                                     if com_check[0] == True:
                                         print('Quick execution of a series of suspicious commands \"' + com_check[1][0] + '\", \"' + com_check[1][1] + '\" // Detected')
 
@@ -608,10 +649,15 @@ class Sysmon_evt (threading.Thread):
                                         tac_tech_list = ['Credential Dumping_Credential Access']
                                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                                        # Home Suspicious Parent
+                                        add_suspicious_parent(mainwindow, event_set)
+
                                        
-                                if ps_dict['get-netLlocalgroupmember'] == 1:
-                                    print('get-netLlocalgroupmember')
+                                if ps_dict['get-netlocalgroupmember'] == 1:
+                                    # TODO
+                                    print('get-netlocalgroupmember')
                                 if ps_dict['get-domaincomputer'] == 1:
+                                    # TODO
                                     print('get-domaincomputer')
 
 
@@ -711,6 +757,9 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list = ['Windows Management Instrumentation_Execution']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
                            
 
                         ##########################################################################################
@@ -736,11 +785,15 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Path Interception_Privilege Escalation', 'Path Interception_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             
                         ##########################################################################################
 
                         # CAR-2014-03-005: Remotely Launched Executables via Services
                         # New Service - Execution
+                        # Modify Existing Service - Persistence
                         # Service Execution - Execution
                         # https://car.mitre.org/analytics/CAR-2014-03-005
 
@@ -754,8 +807,11 @@ class Sysmon_evt (threading.Thread):
                                 event_set['Name'] = 'Remotely Launched Executables via Services'
                                 event_set['Event'] = [record_dict, flow[1]]
 
-                                tac_tech_list = ['New Service_Execution', 'Service Execution_Execution']
+                                tac_tech_list = ['New Service_Execution', 'Service Execution_Execution', 'Modify Existing Service_Persistence']
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                                # Home Suspicious Parent
+                                add_suspicious_parent(mainwindow, event_set)
 
                                 
                         ##########################################################################################
@@ -777,6 +833,9 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Data Compressed_Exfiltration']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             
                         ##########################################################################################
 
@@ -797,6 +856,9 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list = ['Scheduled Task_Execution', 'Scheduled Task_Persistence', 'Scheduled Task_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                             
                         ##########################################################################################
@@ -885,6 +947,8 @@ class Sysmon_evt (threading.Thread):
                             
                             if len(tac_tech_list) != 0:
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+                                # Home Suspicious Parent
+                                add_suspicious_parent(mainwindow, event_set)
 
                         
                             
@@ -911,6 +975,9 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list = ['PowerShell_Execution', 'Windows Remote Management_Lateral Movement']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                             
 
@@ -939,6 +1006,9 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list = ['Masquerading_Defense Evasion']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                             
 
@@ -971,6 +1041,9 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Accessibility Features_Privilege Escalation', 'Accessibility Features_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             # TODO 각각 어느 전술이랑 어느 테크닉에 저장할지 다시 생각해보기!
                             # TODO Execution 에는 Accessibility Features 가 없는데 CAR에는 왜 Tactics에 Execution이 포함돼있지...?
 
@@ -999,6 +1072,9 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list = ['Rundll32_Defense Evasion']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                             
                         ##########################################################################################
@@ -1049,6 +1125,9 @@ class Sysmon_evt (threading.Thread):
 
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             
 
                         ##########################################################################################
@@ -1071,6 +1150,9 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['New Service_Persistence', 'New Service_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             
 
                         ##########################################################################################
@@ -1092,12 +1174,15 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Scheduled Task_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             
 
                         ##########################################################################################
 
                         # CAR-2014-11-008: Command Launched from WinLogon
-                        # Accessibility Features - Privilege Escalation, Execution, Persistence
+                        # Accessibility Features - Privilege Escalation, Persistence
                         # https://car.mitre.org/analytics/CAR-2014-11-008
 
                         if (
@@ -1116,14 +1201,17 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Accessibility Features_Privilege Escalation', 'Accessibility Features_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                             
 
                         ##########################################################################################
 
                         # CAR-2013-03-001: Reg.exe called from Command Shell
-                        # Query Registry - Defense Evasion
-                        # Modify Registry - Persistence, Privilege Escalation
-                        # Registry Run Keys / Startup Folder - Persistence, Privilege Escalation
+                        # Query Registry - Discovery
+                        # Modify Registry - Defense Evasion
+                        # Registry Run Keys / Startup Folder - Persistence
                         # Service Registry Permissions Weakness - Persistence, Privilege Escalation
                         # https://car.mitre.org/analytics/CAR-2013-03-001
 
@@ -1151,16 +1239,18 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Reg.exe called from Command Shell'
                             event_set['Event'] = [record_dict, cmd_proc]
 
-                            tac_tech_list = ['Query Registry_Defense Evasion', 'Modify Registry_Persistence', 'Modify Registry_Privilege Escalation',
-                            'Registry Run Keys / Startup Folder_Persistence', 'Registry Run Keys / Startup Folder_Privilege Escalation',
+                            tac_tech_list = ['Query Registry_Discovery', 'Modify Registry_Defense Evasion', 'Registry Run Keys / Startup Folder_Persistence',
                             'Service Registry Permissions Weakness_Persistence', 'Service Registry Permissions Weakness_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                             
                         ###########################################################################################
 
                         # CAR-2013-09-005: Service Outlier Executables
-                        # Modify Existing Service - Persistence, Privilege Escalation
+                        # Modify Existing Service - Persistence
                         # New Service - Persistence, Privilege Escalation
                         # https://car.mitre.org/analytics/CAR-2013-09-005
 
@@ -1192,8 +1282,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Service Outlier Executables'
                             event_set['Event'] = [record_dict]
 
-                            tac_tech_list = ['Modify Existing Service_Persistence', 'Modify Existing Service_Privilege Escalation', 'New Service_Persistence', 'New Service_Privilege Escalation']
+                            tac_tech_list = ['Modify Existing Service_Persistence', 'New Service_Persistence', 'New Service_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                            
 
@@ -1221,6 +1314,9 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Command-Line Interface_Execution']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
+
                            
 
                         ###########################################################################################
@@ -1240,8 +1336,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Destination Host PSEXEC SYSMON'
                             event_set['Event'] = [record_dict]
 
-                            tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_ Execution']
+                            tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_Execution']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                         ###########################################################################################
 
@@ -1260,8 +1359,11 @@ class Sysmon_evt (threading.Thread):
                             event_set['Name'] = 'Source Host PSEXEC SYSMON'
                             event_set['Event'] = [record_dict]
 
-                            tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_ Execution']
+                            tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_Execution']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+
+                            # Home Suspicious Parent
+                            add_suspicious_parent(mainwindow, event_set)
 
                         ###########################################################################################
 
@@ -1269,7 +1371,6 @@ class Sysmon_evt (threading.Thread):
                     elif evt_id == 3:
 
                         # CAR-2014-05-001: RPC Activity
-                        # Lateral Movement - Valid Accounts
                         # Lateral Movement - Remote Services
                         # https://car.mitre.org/analytics/CAR-2014-05-001
 
@@ -1287,7 +1388,7 @@ class Sysmon_evt (threading.Thread):
                                 event_set['Name'] = 'RPC Activity'
                                 event_set['Event'] = [record_dict, rpc_mapper[1]]
 
-                                tac_tech_list = ['Valid Accounts_Lateral Movement', 'Remote Services_Lateral Movement']
+                                tac_tech_list = ['Remote Services_Lateral Movement']
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
                                 
@@ -1523,7 +1624,7 @@ class Sysmon_evt (threading.Thread):
         while 1:
             events = win32evtlog.EvtNext(handle, 10)
             if len(events) == 0:
-                return (False, ['', ''], None)
+                return {}
             for event in events:
                 record = win32evtlog.EvtRender(event, win32evtlog.EvtRenderEventXml)
 
@@ -1556,7 +1657,7 @@ class Sysmon_evt (threading.Thread):
 
                 if (
                     evt_id == 1 and 
-                    ps_start['Event']['EventData']['ProcessId'] == str(proc_id)
+                    str(ps_start['Event']['EventData']['ProcessId']) == str(proc_id)
                     ):
 
                     # Powershell Start 이벤트일때 parentImage 판단!
@@ -1586,11 +1687,11 @@ class Sysmon_evt (threading.Thread):
 
                             # 해당 powershell 이벤트와 상응하는 powershell start 이벤트 찾기
 
-                            if ps_log_proc_id == proc_id:
+                            if str(ps_log_proc_id) == str(proc_id):
 
                                 return_dict = {}
                                 return_dict['mimikatz'] = 0
-                                return_dict['get-netLlocalgroupmember'] = 0
+                                return_dict['get-netlocalgroupmember'] = 0
                                 return_dict['get-domaincomputer'] = 0
                                 return_dict['ps_command_line'] = ''.join(lines)
 
@@ -1606,8 +1707,8 @@ class Sysmon_evt (threading.Thread):
                                             return_dict['mimikatz'] = 1
                                             suspicious_command_line += line
                                             check_suspicious = True
-                                        if "get-netLlocalgroupmember" in pre_100_str:
-                                            return_dict['get-netLlocalgroupmember'] = 1
+                                        if "get-netlocalgroupmember" in pre_100_str:
+                                            return_dict['get-netlocalgroupmember'] = 1
                                             suspicious_command_line += line
                                             check_suspicious = True
                                         if "get-domaincomputer" in pre_100_str:
@@ -1622,7 +1723,7 @@ class Sysmon_evt (threading.Thread):
                                     return return_dict
 
                             f.close()
-                return {}
+                # return {}
 
 
     def RPC_Activity(self, rpc_endpoint):
@@ -1957,7 +2058,7 @@ class System_evt (threading.Thread):
                         event_set['Name'] = 'Destination Host PSEXEC SYSTEM'
                         event_set['Event'] = [record_dict]
 
-                        tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_ Execution']
+                        tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_Execution']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
                     
@@ -2055,7 +2156,7 @@ class Security_evt (threading.Thread):
                     ##########################################################################################
 
                     # CAR-2016-04-005: Remote Desktop Logon
-                    # Lateral Movement - Valid Accounts
+                    # Remote Desktop Protocol_Lateral Movement
                     # https://car.mitre.org/analytics/CAR-2016-04-005
 
                     if (
@@ -2071,7 +2172,7 @@ class Security_evt (threading.Thread):
                         event_set['Name'] = 'Remote Desktop Logon'
                         event_set['Event'] = [record_dict]
 
-                        tac_tech_list = ['Valid Accounts_Lateral Movement']
+                        tac_tech_list = ['Remote Desktop Protocol_Lateral Movement']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
 
