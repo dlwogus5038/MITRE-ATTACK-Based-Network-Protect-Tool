@@ -66,6 +66,8 @@ service_outlier_executables_history = {}
 
 outlier_parents_of_cmd_history = {}
 
+suspicious_parent = {}
+
 # CAR-2013-05-002: Suspicious Run Locations
 # cmd 에서 명령어 입력하고 출력값 받아오는 코드
 windir = subprocess.getstatusoutput("echo %windir%")[1]
@@ -312,10 +314,10 @@ def change_interface(mainwindow, event_set, event_id, evt_local_time, tac_tech_l
     tech_list = list(set(tech_list))
 
     for elem in tac_list:
-    	mainwindow.tac_tech_events[elem]['Events'][event_id] = event_set
-    	append_to_event_dict(mainwindow.tac_tech_events[elem]['Events'], event_id, event_set)
-    	add_table_row(mainwindow.tac_tech_events[elem]['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-    	mainwindow.tac_tech_events[elem]['Button'].setStyleSheet(mainwindow.detect_tech_button_style)
+        mainwindow.tac_tech_events[elem]['Events'][event_id] = event_set
+        append_to_event_dict(mainwindow.tac_tech_events[elem]['Events'], event_id, event_set)
+        add_table_row(mainwindow.tac_tech_events[elem]['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+        mainwindow.tac_tech_events[elem]['Button'].setStyleSheet(mainwindow.detect_tech_button_style)
 
     # Detected Num Label (Home)
     mainwindow.detected_num += 1
@@ -327,6 +329,54 @@ def change_interface(mainwindow, event_set, event_id, evt_local_time, tac_tech_l
 
     # Predict Attacker
     predict_group_or_sw(mainwindow, tech_list)
+
+    # Home Suspicious Parent
+    add_suspicious_parent(mainwindow, event_set)
+
+def add_suspicious_parent(mainwindow, event_set):
+    parent_pid = event_set['Event'][0]['Event']['EventData']['ParentProcessId']
+    parent_image = event_set['Event'][0]['Event']['EventData']['ParentImage']
+    check_insert = False
+
+    if parent_pid not in suspicious_parent:
+        suspicious_parent[parent_pid] = {}
+        suspicious_parent[parent_pid][parent_image] = [event_set]
+        check_insert = True
+    else:
+        if parent_image not in suspicious_parent[parent_pid]:
+            suspicious_parent[parent_pid][parent_image] = [event_set]
+            check_insert = True
+        else:
+            suspicious_parent[parent_pid][parent_image].append(event_set)
+
+    if check_insert == True:
+
+        ## change_suspicious_parent_table_interface
+
+        home_table = mainwindow.home_parent_table
+
+        table_row = home_table.rowCount()
+        home_table.setRowCount(table_row + 1)
+
+        # ProcessId
+
+        new_item=QTableWidgetItem(parent_pid)
+        new_item.setFont(QFont('Times New Roman',13))
+        new_item.setTextAlignment(Qt.AlignCenter)
+
+        home_table.setItem(table_row, 0, new_item)
+
+        # ProcessImage
+
+        new_item=QTableWidgetItem(parent_image)
+        new_item.setFont(QFont('Times New Roman',13))
+        new_item.setTextAlignment(Qt.AlignCenter)
+
+        home_table.setItem(table_row, 1, new_item)
+
+        QTableWidget.resizeColumnsToContents(home_table)
+        QTableWidget.resizeRowsToContents(home_table)
+
 
 # ===================================================================================================== #
 # ===================================================================================================== #
@@ -467,42 +517,6 @@ class Sysmon_evt (threading.Thread):
                                 tac_tech_list = ['PowerShell_Execution', 'Scripting_Defense Evasion']
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                                """
-
-                                self.mainwindow.tac_tech_events['Defense Evasion']['Events'][event_id] = event_set
-                                self.mainwindow.tac_tech_events['Execution']['Events'][event_id] = event_set
-
-                                self.mainwindow.tac_tech_events['Execution']['PowerShell']['Events'][event_id] = event_set
-                                self.mainwindow.tac_tech_events['Defense Evasion']['Scripting']['Events'][event_id] = event_set
-
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['PowerShell']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Scripting']['Events'], event_id, event_set)
-
-                                add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2014-04-003', 'Powershell Execution')
-                                add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, 'CAR-2014-04-003', 'Powershell Execution')
-                                add_table_row(self.mainwindow.tac_tech_events['Execution']['PowerShell']['Table'], evt_local_time, event_id, 'CAR-2014-04-003', 'Powershell Execution')
-                                add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Scripting']['Table'], evt_local_time, event_id, 'CAR-2014-04-003', 'Powershell Execution')
-
-                                self.mainwindow.tac_tech_events['Execution']['PowerShell']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                                self.mainwindow.tac_tech_events['Defense Evasion']['Scripting']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                                self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                                self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                                # Detected Num Label (Home)
-                                self.mainwindow.detected_num += 1
-                                self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                                # Home Detected Events
-                                append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                                home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                                # Predict Attacker
-                                predict_group_or_sw(self.mainwindow, ['PowerShell', 'Scripting'])
-
-                                """
 
                                 # return_dict['mimikatz'] = 0
                                 # return_dict['get-netLlocalgroupmember'] = 0
@@ -571,6 +585,9 @@ class Sysmon_evt (threading.Thread):
 
                                         # Predict Attacker
                                         predict_group_or_sw(self.mainwindow, tmp_tech_list)
+
+                                        # Home Suspicious Parent
+                                        add_suspicious_parent(self.mainwindow, event_set)
                                         
 
                                     ###############################################################################################
@@ -591,29 +608,7 @@ class Sysmon_evt (threading.Thread):
                                         tac_tech_list = ['Credential Dumping_Credential Access']
                                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                                        """
-
-                                        append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Events'], event_id, event_set)
-                                        append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Events'], event_id, event_set)
-
-                                        add_table_row(self.mainwindow.tac_tech_events['Credential Access']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                                        add_table_row(self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-
-                                        self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                                        self.mainwindow.tac_tech_events['Credential Access']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                                        # Detected Num Label (Home)
-                                        self.mainwindow.detected_num += 1
-                                        self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                                        # Home Detected Events
-                                        append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                                        home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                                        # Predict Attacker
-                                        predict_group_or_sw(self.mainwindow, ['Credential Dumping'])
-                                        """
-
+                                       
                                 if ps_dict['get-netLlocalgroupmember'] == 1:
                                     print('get-netLlocalgroupmember')
                                 if ps_dict['get-domaincomputer'] == 1:
@@ -693,6 +688,9 @@ class Sysmon_evt (threading.Thread):
                                     # Predict Attacker
                                     predict_group_or_sw(self.mainwindow, tmp_tech_list)
 
+                                    # Home Suspicious Parent
+                                    add_suspicious_parent(self.mainwindow, event_set)
+
                         ##########################################################################################
 
                         # CAR-2016-03-002: Create Remote Process via WMIC
@@ -713,30 +711,7 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list = ['Windows Management Instrumentation_Execution']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
-
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Windows Management Instrumentation']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, 'CAR-2016-03-002', 'Create Remote Process via WMIC')
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Windows Management Instrumentation']['Table'], evt_local_time, event_id, 'CAR-2016-03-002', 'Create Remote Process via WMIC')
-
-                            self.mainwindow.tac_tech_events['Execution']['Windows Management Instrumentation']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Windows Management Instrumentation'])
-
-                            """
+                           
 
                         ##########################################################################################
 
@@ -761,37 +736,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Path Interception_Privilege Escalation', 'Path Interception_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Path Interception']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Path Interception']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2014-07-001', 'Service Search Path Interception')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Path Interception']['Table'], evt_local_time, event_id, 'CAR-2014-07-001', 'Service Search Path Interception')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2014-07-001', 'Service Search Path Interception')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Path Interception']['Table'], evt_local_time, event_id, 'CAR-2014-07-001', 'Service Search Path Interception')
-
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Path Interception']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Path Interception']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Path Interception'])
-
-                            """
-
+                            
                         ##########################################################################################
 
                         # CAR-2014-03-005: Remotely Launched Executables via Services
@@ -812,35 +757,7 @@ class Sysmon_evt (threading.Thread):
                                 tac_tech_list = ['New Service_Execution', 'Service Execution_Execution']
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                                """
-
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
-
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['New Service']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Service Execution']['Events'], event_id, event_set)
-
-                                add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
-                                add_table_row(self.mainwindow.tac_tech_events['Execution']['New Service']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
-                                add_table_row(self.mainwindow.tac_tech_events['Execution']['Service Execution']['Table'], evt_local_time, event_id, 'CAR-2014-03-005', 'Remotely Launched Executables via Services')
-
-                                self.mainwindow.tac_tech_events['Execution']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                                self.mainwindow.tac_tech_events['Execution']['Service Execution']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                                self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                                # Detected Num Label (Home)
-                                self.mainwindow.detected_num += 1
-                                self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                                # Home Detected Events
-                                append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                                home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                                # Predict Attacker
-                                predict_group_or_sw(self.mainwindow, ['New Service', 'Service Execution'])
-
-                                """
-
+                                
                         ##########################################################################################
 
                         # CAR-2013-07-005: Command Line Usage of Archiving Software
@@ -860,30 +777,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Data Compressed_Exfiltration']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Exfiltration']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Exfiltration']['Data Compressed']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Exfiltration']['Table'], evt_local_time, event_id, 'CAR-2013-07-005', 'Command Line Usage of Archiving Software')
-                            add_table_row(self.mainwindow.tac_tech_events['Exfiltration']['Data Compressed']['Table'], evt_local_time, event_id, 'CAR-2013-07-005', 'Command Line Usage of Archiving Software')
-
-                            self.mainwindow.tac_tech_events['Exfiltration']['Data Compressed']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Exfiltration']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Data Compressed'])
-
-                            """
-
+                            
                         ##########################################################################################
 
                         # CAR-2013-05-004: Execution with AT
@@ -904,47 +798,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Scheduled Task_Execution', 'Scheduled Task_Persistence', 'Scheduled Task_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Scheduled Task']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Scheduled Task']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, 'CAR-2013-05-004', 'Execution with AT')
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Scheduled Task']['Table'], evt_local_time, event_id, 'CAR-2013-05-004', 'Execution with AT')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2013-05-004', 'Execution with AT')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Table'], evt_local_time, event_id, 'CAR-2013-05-004', 'Execution with AT')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2013-05-004', 'Execution with AT')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Scheduled Task']['Table'], evt_local_time, event_id, 'CAR-2013-05-004', 'Execution with AT')
-
-                            self.mainwindow.tac_tech_events['Execution']['Scheduled Task']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Scheduled Task']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Scheduled Task'])
-
-                            """
-
+                            
                         ##########################################################################################
 
                         # CAR-2013-07-001: Suspicious Arguments
@@ -987,21 +841,7 @@ class Sysmon_evt (threading.Thread):
                             print('Suspicious Arguments : putty // Detected')
 
                             tac_tech_list.append('Remote Services_Lateral Movement')
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Remote Services'])
-
-                            """
+                            
 
                         elif port_fwd:
                             print('Suspicious Arguments : port_fwd // Detected')
@@ -1014,48 +854,14 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list.append('Remote File Copy_Lateral Movement')
                             tac_tech_list.append('Remote File Copy_Command and Control')
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote File Copy']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Command and Control']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Command and Control']['Remote File Copy']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Remote File Copy']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                            add_table_row(self.mainwindow.tac_tech_events['Command and Control']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                            add_table_row(self.mainwindow.tac_tech_events['Command and Control']['Remote File Copy']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Remote File Copy']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Command and Control']['Remote File Copy']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Command and Control']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Remote File Copy'])
-
-                            """
+                            
 
                         elif mimikatz:
                             print('Suspicious Arguments : mimikatz // Detected')
 
                             tac_tech_list.append('Credential Dumping_Credential Access')
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Credential Access']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                            add_table_row(self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-
-                            self.mainwindow.tac_tech_events['Credential Access']['Credential Dumping']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Credential Access']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Credential Dumping'])
-
-                            """
+                            
 
                         elif rar:
                             print('Suspicious Arguments : rar // Detected')
@@ -1073,39 +879,14 @@ class Sysmon_evt (threading.Thread):
 
                             tac_tech_list.append('Remote Services_Lateral Movement')
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Table'], evt_local_time, event_id, 'CAR-2013-07-001', 'Suspicious Arguments')
-
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Remote Services'])
-
-                            """
-
+                            
 
                         if check_detected == True:
-                        	
-                        	if len(tac_tech_list) != 0:
-                        		change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
+                            
+                            if len(tac_tech_list) != 0:
+                                change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        	"""
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            """
+                        
                             
                             
                             # TODO 전술이랑 테크닉을 어떻게 나눌지 고민해봐야함..
@@ -1131,38 +912,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['PowerShell_Execution', 'Windows Remote Management_Lateral Movement']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['PowerShell']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, 'CAR-2014-11-004', 'Remote PowerShell Sessions')
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['PowerShell']['Table'], evt_local_time, event_id, 'CAR-2014-11-004', 'Remote PowerShell Sessions')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2014-11-004', 'Remote PowerShell Sessions')
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Table'], evt_local_time, event_id, 'CAR-2014-11-004', 'Remote PowerShell Sessions')
-
-                            self.mainwindow.tac_tech_events['Execution']['PowerShell']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['PowerShell', 'Windows Remote Management'])
-
-                            """
+                            
 
                         ##########################################################################################
 
@@ -1190,27 +940,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Masquerading_Defense Evasion']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Masquerading']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2013-05-002', 'Suspicious Run Locations')
-                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Masquerading']['Table'], evt_local_time, event_id, 'CAR-2013-05-002', 'Suspicious Run Locations')
-
-                            self.mainwindow.tac_tech_events['Defense Evasion']['Masquerading']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Masquerading'])
-                            """
+                            
 
                         ##########################################################################################
 
@@ -1244,39 +974,7 @@ class Sysmon_evt (threading.Thread):
                             # TODO 각각 어느 전술이랑 어느 테크닉에 저장할지 다시 생각해보기!
                             # TODO Execution 에는 Accessibility Features 가 없는데 CAR에는 왜 Tactics에 Execution이 포함돼있지...?
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2014-11-003', 'Debuggers for Accessibility Applications')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Table'], evt_local_time, event_id, 'CAR-2014-11-003', 'Debuggers for Accessibility Applications')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2014-11-003', 'Debuggers for Accessibility Applications')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Table'], evt_local_time, event_id, 'CAR-2014-11-003', 'Debuggers for Accessibility Applications')
-
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Accessibility Features'])
-
-                            """
-
+                            
                         ##########################################################################################
 
                         # CAR-2014-03-006: RunDLL32.exe monitoring
@@ -1302,30 +1000,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Rundll32_Defense Evasion']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Rundll32']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2014-03-006', 'RunDLL32.exe monitoring')
-                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Rundll32']['Table'], evt_local_time, event_id, 'CAR-2014-03-006', 'RunDLL32.exe monitoring')
-
-                            self.mainwindow.tac_tech_events['Defense Evasion']['Rundll32']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Rundll32'])
-
-                            """
-
+                            
                         ##########################################################################################
 
                         # CAR-2016-03-001: Host Discovery Commands
@@ -1370,34 +1045,11 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = []
 
                             for tech_elem in tmp_tech_list:
-                            	tac_tech_list.append(tech_elem + '_Discovery')
+                                tac_tech_list.append(tech_elem + '_Discovery')
 
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Discovery']['Events'], event_id, event_set)
-                            add_table_row(self.mainwindow.tac_tech_events['Discovery']['Table'], evt_local_time, event_id, 'CAR-2016-03-001', 'Host Discovery Commands')
-                            self.mainwindow.tac_tech_events['Discovery']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            for tech_elem in tmp_tech_list:
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Discovery'][tech_elem]['Events'], event_id, event_set)
-                                add_table_row(self.mainwindow.tac_tech_events['Discovery'][tech_elem]['Table'], evt_local_time, event_id, 'CAR-2016-03-001', 'Host Discovery Commands')
-                                self.mainwindow.tac_tech_events['Discovery'][tech_elem]['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                                # Predict Attacker
-                                predict_group_or_sw(self.mainwindow, [tech_elem])
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            """
+                            
 
                         ##########################################################################################
 
@@ -1419,44 +1071,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['New Service_Persistence', 'New Service_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            self.mainwindow.tac_tech_events['Persistence']['Events'][event_id] = event_set
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Events'][event_id] = event_set
-
-                            self.mainwindow.tac_tech_events['Persistence']['New Service']['Events'][event_id] = event_set
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Events'][event_id] = event_set
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['New Service']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2014-05-002', 'Services launching Cmd')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['New Service']['Table'], evt_local_time, event_id, 'CAR-2014-05-002', 'Services launching Cmd')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2014-05-002', 'Services launching Cmd')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Table'], evt_local_time, event_id, 'CAR-2014-05-002', 'Services launching Cmd')
-
-                            self.mainwindow.tac_tech_events['Persistence']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['New Service'])
-
-                            """
+                            
 
                         ##########################################################################################
 
@@ -1477,31 +1092,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Scheduled Task_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Events'], event_id, event_set)
-
-
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2013-08-001', 'Execution with schtasks')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Table'], evt_local_time, event_id, 'CAR-2013-08-001', 'Execution with schtasks')
-
-                            self.mainwindow.tac_tech_events['Persistence']['Scheduled Task']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Scheduled Task'])
-
-                            """
+                            
 
                         ##########################################################################################
 
@@ -1525,44 +1116,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Accessibility Features_Privilege Escalation', 'Accessibility Features_Persistence']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Events'][event_id] = event_set
-                            self.mainwindow.tac_tech_events['Persistence']['Events'][event_id] = event_set
-
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Events'][event_id] = event_set
-                            self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Events'][event_id] = event_set
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2014-11-008', 'Command Launched from WinLogon')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Table'], evt_local_time, event_id, 'CAR-2014-11-008', 'Command Launched from WinLogon')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2014-11-008', 'Command Launched from WinLogon')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Table'], evt_local_time, event_id, 'CAR-2014-11-008', 'Command Launched from WinLogon')
-
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Accessibility Features']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Accessibility Features']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Accessibility Features'])
-
-                            """
+                            
 
                         ##########################################################################################
 
@@ -1602,60 +1156,7 @@ class Sysmon_evt (threading.Thread):
                             'Service Registry Permissions Weakness_Persistence', 'Service Registry Permissions Weakness_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Query Registry']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Modify Registry']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Registry Run Keys / Startup Folder']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Service Registry Permissions Weakness']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Modify Registry']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Registry Run Keys / Startup Folder']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Service Registry Permissions Weakness']['Events'], event_id, event_set)
                             
-
-                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Query Registry']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Modify Registry']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Registry Run Keys / Startup Folder']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Service Registry Permissions Weakness']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Modify Registry']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Registry Run Keys / Startup Folder']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Service Registry Permissions Weakness']['Table'], evt_local_time, event_id, 'CAR-2013-03-001', 'Reg.exe called from Command Shell')
-
-                            self.mainwindow.tac_tech_events['Defense Evasion']['Query Registry']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Modify Registry']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Registry Run Keys / Startup Folder']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Service Registry Permissions Weakness']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Modify Registry']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Registry Run Keys / Startup Folder']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Service Registry Permissions Weakness']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Query Registry', 'Modify Registry', 'Registry Run Keys / Startup Folder', 'Service Registry Permissions Weakness'])
-
-                            """
                         ###########################################################################################
 
                         # CAR-2013-09-005: Service Outlier Executables
@@ -1694,43 +1195,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Modify Existing Service_Persistence', 'Modify Existing Service_Privilege Escalation', 'New Service_Persistence', 'New Service_Privilege Escalation']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['Modify Existing Service']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Persistence']['New Service']['Events'], event_id, event_set)
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Events'], event_id, event_set)
-                            
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['Modify Existing Service']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-                            add_table_row(self.mainwindow.tac_tech_events['Persistence']['New Service']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-                            
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-                            add_table_row(self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-
-                            self.mainwindow.tac_tech_events['Persistence']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['Modify Existing Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Persistence']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                          
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-                            self.mainwindow.tac_tech_events['Privilege Escalation']['New Service']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Modify Existing Service', 'New Service'])
-
-                            """
-
-                        
+                           
 
                         ###########################################################################################
 
@@ -1756,29 +1221,47 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Command-Line Interface_Execution']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
+                           
 
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Execution']['Command-Line Interface']['Events'], event_id, event_set)
+                        ###########################################################################################
 
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
-                            add_table_row(self.mainwindow.tac_tech_events['Execution']['Command-Line Interface']['Table'], evt_local_time, event_id, event_set['ID'], event_set['Name'])
+                        # 내가 한것!
+                        # PSEXEC SYSMON : PSEXEC SYSMON
+                        # Windows Admin Shares _ Lateral Movement
+                        # Service Execution _ Execution
+                        # Discription : Destination Host PSEXEC
 
-                            self.mainwindow.tac_tech_events['Execution']['Command-Line Interface']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                            self.mainwindow.tac_tech_events['Execution']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+                        
+                        if image == "C:\\Windows\\PSEXESVC.exe":
 
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
+                            print('Destination Host PSEXEC.exe SYSMON // Detected')
+                            event_set = {}
+                            event_set['ID'] = 'Destination Host PSEXEC SYSMON'
+                            event_set['Name'] = 'Destination Host PSEXEC SYSMON'
+                            event_set['Event'] = [record_dict]
 
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
+                            tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_ Execution']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Command-Line Interface'])
+                        ###########################################################################################
 
-                            """
+                        # 내가 한것!
+                        # PSEXEC SYSMON : PSEXEC SYSMON
+                        # Windows Admin Shares _ Lateral Movement
+                        # Service Execution _ Execution
+                        # Discription : Source Host PSEXEC
+
+                        
+                        if image == "C:\\Users\\Administrator\\mystery.exe":
+
+                            print('Source Host PSEXEC.exe SYSMON // Detected')
+                            event_set = {}
+                            event_set['ID'] = 'Source Host PSEXEC SYSMON'
+                            event_set['Name'] = 'Source Host PSEXEC SYSMON'
+                            event_set['Event'] = [record_dict]
+
+                            tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_ Execution']
+                            change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
                         ###########################################################################################
 
@@ -1807,33 +1290,7 @@ class Sysmon_evt (threading.Thread):
                                 tac_tech_list = ['Valid Accounts_Lateral Movement', 'Remote Services_Lateral Movement']
                                 change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                                """
-
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Events'], event_id, event_set)
-                                append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Events'], event_id, event_set)
-
-                                add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2014-05-001', 'RPC Activity')
-                                add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Table'], evt_local_time, event_id, 'CAR-2014-05-001', 'RPC Activity')
-                                add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Table'], evt_local_time, event_id, 'CAR-2014-05-001', 'RPC Activity')
-
-                                self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-                                self.mainwindow.tac_tech_events['Lateral Movement']['Remote Services']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                                self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                                # Detected Num Label (Home)
-                                self.mainwindow.detected_num += 1
-                                self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                                # Home Detected Events
-                                append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                                home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                                # Predict Attacker
-                                predict_group_or_sw(self.mainwindow, ['Valid Accounts', 'Remote Services'])
-
-                                """
+                                
 
                         ##########################################################################################
 
@@ -1855,33 +1312,7 @@ class Sysmon_evt (threading.Thread):
                             tac_tech_list = ['Windows Remote Management_Lateral Movement']
                             change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                            """
-
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                            append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Events'], event_id, event_set)
-
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2014-11-006', 'Windows Remote Management (WinRM)')
-                            add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Table'], evt_local_time, event_id, 'CAR-2014-11-006', 'Windows Remote Management (WinRM)')
-
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Windows Remote Management']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                            self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                            # Detected Num Label (Home)
-                            self.mainwindow.detected_num += 1
-                            self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                            # Home Detected Events
-                            append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                            home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                            # Predict Attacker
-                            predict_group_or_sw(self.mainwindow, ['Windows Remote Management'])
-
-                            """
                             
-
-
                     ###########################################################################################
 
                     # CAR-2015-04-002: Remotely Scheduled Tasks via Schtasks
@@ -2482,30 +1913,6 @@ class System_evt (threading.Thread):
                         tac_tech_list = ['Indicator Blocking_Defense Evasion']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        """
-
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Events'], event_id, event_set)
-
-                        add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2016-04-003', 'User Activity from Stopping Windows Defensive Services')
-                        add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Table'], evt_local_time, event_id, 'CAR-2016-04-003', 'User Activity from Stopping Windows Defensive Services')
-
-                        self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                        self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                        # Detected Num Label (Home)
-                        self.mainwindow.detected_num += 1
-                        self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                        # Home Detected Events
-                        append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                        home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                        # Predict Attacker
-                        predict_group_or_sw(self.mainwindow, ['Indicator Blocking'])
-
-                        """
                         
                     ##########################################################################################
 
@@ -2529,31 +1936,40 @@ class System_evt (threading.Thread):
                         tac_tech_list = ['Indicator Blocking_Defense Evasion']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        """
+                    ##########################################################################################
 
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Events'], event_id, event_set)
+                    #  내가 한것 ! : PSEXEC.EXE의 사용 찾기!
+                    # 보니까.. PSEXEC 의 사용자측에서는 안뜨고! 피해자 측에서만 system에 7045 이벤트가 뜸!!
+                    # PSEXEC SYSTEM : PSEXEC SYSTEM
+                    # Windows Admin Shares _ Lateral Movement
+                    # Service Execution _ Execution
 
+                    
+                    if (
+                        evt_id == 7045 and 
+                        str(record_dict['Event']['EventData']['ServiceName']) == "PSEXESVC" and
+                        str(record_dict['Event']['EventData']['ImagePath']) == "%SystemRoot%\\PSEXESVC.exe"
+                        ):
 
-                        add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2016-04-002', 'User Activity from Clearing Event Logs')
-                        add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Table'], evt_local_time, event_id, 'CAR-2016-04-002', 'User Activity from Clearing Event Logs')
+                        print('Destination Host PSEXEC.exe SYSTEM // Detected')
+                        event_set = {}
+                        event_set['ID'] = 'Destination Host PSEXEC SYSTEM'
+                        event_set['Name'] = 'Destination Host PSEXEC SYSTEM'
+                        event_set['Event'] = [record_dict]
 
-                        self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
+                        tac_tech_list = ['Windows Admin Shares_Lateral Movement', 'Service Execution_ Execution']
+                        change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
+                    
 
-                        # Detected Num Label (Home)
-                        self.mainwindow.detected_num += 1
-                        self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
+                    # 여기 말고 SYSMON 모니터링하는 부분에 써야할 부분이긴 한데.. 일단 여기서 다 몰아서 써놓겠음!
+                    # PSEXESVC.exe 이후의 이벤트를 확인 한 결과! PSEXESVC.exe가 실행되고 나서 몇분 후에 parent가 PSEXESVC.exe인 이벤트가 생성됨!
+                    # 확인결과 crater.exe를 실행시킴!
+                    # 이런식으로 자식 프로세스를 찾아보면 악성 프로그램을 찾을 수 있을듯!
 
-                        # Home Detected Events
-                        append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                        home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
+                    # 아마... 1초 안에 해당 psexesvc.exe의 프로세스를 부모로 둔 이벤트가 발생하면 찾아내는걸로 하면 될듯...!?
 
-                        # Predict Attacker
-                        predict_group_or_sw(self.mainwindow, ['Indicator Blocking'])
-
-                        """
+                        
 
 # ===================================================================================================== #
 # ===================================================================================================== #
@@ -2658,31 +2074,6 @@ class Security_evt (threading.Thread):
                         tac_tech_list = ['Valid Accounts_Lateral Movement']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        """
-
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Events'], event_id, event_set)
-
-
-                        add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2016-04-005', 'Remote Desktop Logon')
-                        add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Table'], evt_local_time, event_id, 'CAR-2016-04-005', 'Remote Desktop Logon')
-
-                        self.mainwindow.tac_tech_events['Lateral Movement']['Valid Accounts']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                        self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                        # Detected Num Label (Home)
-                        self.mainwindow.detected_num += 1
-                        self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                        # Home Detected Events
-                        append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                        home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                        # Predict Attacker
-                        predict_group_or_sw(self.mainwindow, ['Valid Accounts'])
-
-                        """
 
                     ##########################################################################################
 
@@ -2707,31 +2098,6 @@ class Security_evt (threading.Thread):
                         tac_tech_list = ['Pass the Hash_Lateral Movement']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        """
-
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Events'], event_id, event_set)
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Lateral Movement']['Pass the Hash']['Events'], event_id, event_set)
-
-                        add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Table'], evt_local_time, event_id, 'CAR-2016-04-004', 'Successful Local Account Login')
-                        add_table_row(self.mainwindow.tac_tech_events['Lateral Movement']['Pass the Hash']['Table'], evt_local_time, event_id, 'CAR-2016-04-004', 'Successful Local Account Login')
-
-                        self.mainwindow.tac_tech_events['Lateral Movement']['Pass the Hash']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                        self.mainwindow.tac_tech_events['Lateral Movement']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                        # Detected Num Label (Home)
-                        self.mainwindow.detected_num += 1
-                        self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                        # Home Detected Events
-                        append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                        home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                        # Predict Attacker
-                        predict_group_or_sw(self.mainwindow, ['Pass the Hash'])
-
-                        """
-
                     ##########################################################################################
 
                     # CAR-2016-04-002: User Activity from Clearing Event Logs
@@ -2751,31 +2117,7 @@ class Security_evt (threading.Thread):
                         tac_tech_list = ['Indicator Blocking_Defense Evasion']
                         change_interface(self.mainwindow, event_set, event_id, evt_local_time, tac_tech_list)
 
-                        """
-
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Events'], event_id, event_set)
-                        append_to_event_dict(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Events'], event_id, event_set)
-
-                        add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Table'], evt_local_time, event_id, 'CAR-2016-04-002', 'User Activity from Clearing Event Logs')
-                        add_table_row(self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Table'], evt_local_time, event_id, 'CAR-2016-04-002', 'User Activity from Clearing Event Logs')
-
-                        self.mainwindow.tac_tech_events['Defense Evasion']['Indicator Blocking']['Button'].setStyleSheet(self.mainwindow.detect_tech_button_style)
-
-                        self.mainwindow.tac_tech_events['Defense Evasion']['Button'].setStyleSheet(self.mainwindow.detect_tac_button_style)
-
-                        # Detected Num Label (Home)
-                        self.mainwindow.detected_num += 1
-                        self.mainwindow.detected_num_label.setText('Detected Event Num : ' + str(self.mainwindow.detected_num))
-
-                        # Home Detected Events
-                        append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
-                        home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
-
-                        # Predict Attacker
-                        predict_group_or_sw(self.mainwindow, ['Remote Desktop Protocol', 'Valid Accounts'])
-
-                        """
-
+                        
                     ##########################################################################################
 
                     # CAR-2015-07-001: All Logins Since Last Boot
@@ -2926,6 +2268,7 @@ class MainWindow(QTabWidget):
                 self.tac_tech_events[elem][elem2['Name']]['Table'] = self.make_detected_table()
 
         # Home Detected Table
+
         self.home_detected_table = self.make_detected_table()
         QTableWidget.resizeColumnsToContents(self.home_detected_table)
         self.home_detected_table.setMinimumSize(1400, 400)#######设置滚动条的尺寸
@@ -2950,6 +2293,11 @@ class MainWindow(QTabWidget):
         QTableWidget.resizeColumnsToContents(self.home_predict_table)
         self.home_predict_table.setMinimumSize(1400, 400)#######设置滚动条的尺寸
 
+        # Home Parent Table
+        self.home_parent_table = self.make_parent_table()
+        QTableWidget.resizeColumnsToContents(self.home_parent_table)
+        self.home_parent_table.setMinimumSize(1400, 400)#######设置滚动条的尺寸
+
 
         # Detected Event Number
         self.detected_num = 0
@@ -2972,6 +2320,7 @@ class MainWindow(QTabWidget):
         self.setWindowTitle("ATT&CK")
 
     def make_predict_table(self):
+
         table = QTableWidget(10,2)
         # 点击事件
         #self.tac_detected.itemClicked.connect(self.tac_item_clicked)
@@ -2991,7 +2340,29 @@ class MainWindow(QTabWidget):
 
         return table
 
+    def make_parent_table(self):
+
+        table = QTableWidget(0,2)
+        # 点击事件
+        #self.tac_detected.itemClicked.connect(self.tac_item_clicked)
+        # 去掉边框线
+        table.setFrameShape(QFrame.NoFrame);
+        # 设置表格整行选中
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        # 设置垂直方向的表头标签
+        table.setHorizontalHeaderLabels(['ProcessID', 'ProcessImage'])
+        # 设置水平方向表格为自适应的伸缩模式
+        #self.tac_detected.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 将表格变为禁止编辑
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 表格头的显示与隐藏
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStyleSheet('font-family : Times New Roman;font:20px;')
+
+        return table
+
     def make_detected_table(self):
+
         table = QTableWidget(0,4)
         # 点击事件
         #self.tac_detected.itemClicked.connect(self.tac_item_clicked)
@@ -3079,6 +2450,10 @@ class MainWindow(QTabWidget):
 
 
     def make_home(self):
+        topFiller = QWidget()
+        topFiller.setStyleSheet('background-color: rgb(255, 255, 255);')
+        topFiller.setMinimumSize(1530, 1600)#######设置滚动条的尺寸
+
         #表单布局
         layout=QFormLayout()
         
@@ -3116,6 +2491,19 @@ class MainWindow(QTabWidget):
         layout.addRow(self.home_predict_table, QLabel())
         self.home_predict_table.itemClicked.connect(self.predict_item_clicked)
 
+        # Suspicious Parent Table
+
+        key_label = QLabel('Suspicious Parent Table')
+        key_label.setStyleSheet('font:30px;'
+            #'font-family : Times New Roman'
+            'padding: 0px;'
+            'font-weight: bold;')
+
+        layout.addRow(key_label,QLabel())
+
+        layout.addRow(self.home_parent_table, QLabel())
+        self.home_parent_table.itemClicked.connect(self.parent_item_clicked)
+
         # Detected Event Table
 
         key_label = QLabel('Detected Event Table')
@@ -3128,9 +2516,20 @@ class MainWindow(QTabWidget):
 
         layout.addRow(self.home_detected_table, QLabel())
         self.home_detected_table.itemClicked.connect(self.event_item_clicked)
+
+        topFiller.setLayout(layout)
+
+        ##创建一个滚动条
+        scroll = QScrollArea()
+        scroll.setStyleSheet('background-color: rgb(255, 255, 255);')
+        scroll.setWidget(topFiller)
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(scroll)
+
         #设置选项卡的小标题与布局方式
         self.setTabText(0,'Home')
-        self.tab1.setLayout(layout)
+        self.tab1.setLayout(vbox)
 
 
     #关闭tab
@@ -3953,7 +3352,7 @@ class MainWindow(QTabWidget):
                         new_item.setTextAlignment(Qt.AlignCenter)
                         table_widget.setItem(row_index, 1, new_item)
 
-            # EventData Attributec
+            # EventData Attribute
 
             row_index += 1
             table_widget.setRowCount(row_index + 1)
@@ -4033,8 +3432,159 @@ class MainWindow(QTabWidget):
         topFiller.setLayout(layout)
         topFiller.setMinimumSize(1530, row_count * 20)#######设置滚动条的尺寸
 
-
         self.addTab(tab, 'Events - ' + event_id)
+        self.setCurrentWidget(tab)
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(scroll)
+        tab.setLayout(vbox)
+
+    #创建 Suspicious Parent Tab
+    def create_parent_tab(self, ppid, ppimage):
+        tab = QWidget()
+        #####
+
+        topFiller = QWidget()
+
+        scroll = QScrollArea()
+        scroll.setStyleSheet('background-color: rgb(252, 252, 252);')
+        scroll.setWidget(topFiller)
+
+        layout = QFormLayout()
+
+        row_count = 0
+
+        # TODO ######################################################################
+        # TODO ######################################################################
+
+        key_label = QLabel('ParentProcessId')
+        key_label.setStyleSheet('font:30px;'
+                    #'font-family : Times New Roman'
+                    'text-align : center;' 
+                    'padding: 0px;'
+                    'font-weight: bold;')
+        layout.addRow(key_label,QLabel())
+
+        row_count += 3
+
+        descript_label = QLabel('   ' + str(ppid) + '\n')
+        descript_label.setStyleSheet('font:20px;padding: 0px;font-family : Times New Roman;')
+        layout.addRow(descript_label,QLabel())
+
+        row_count += 2
+
+        key_label = QLabel('ParentProcessImage')
+        key_label.setStyleSheet('font:30px;'
+                    #'font-family : Times New Roman'
+                    'text-align : center;' 
+                    'padding: 0px;'
+                    'font-weight: bold;')
+        layout.addRow(key_label,QLabel())
+
+        row_count += 3
+
+        descript_label = QLabel('   ' + ppimage + '\n')
+        descript_label.setStyleSheet('font:20px;padding: 0px;font-family : Times New Roman;')
+        layout.addRow(descript_label,QLabel())
+
+        row_count += 2
+
+        # Create Table
+
+        key_label = QLabel('Suspicious Child Event Table')
+        key_label.setStyleSheet('font:30px;'
+                    #'font-family : Times New Roman'
+                    'text-align : center;' 
+                    'padding: 0px;'
+                    'font-weight: bold;')
+        layout.addRow(key_label,QLabel())
+        row_count += 3
+
+        # Table
+
+        table = QTableWidget(0,4)
+        # 点击事件
+        #self.tac_detected.itemClicked.connect(self.tac_item_clicked)
+        # 去掉边框线
+        table.setFrameShape(QFrame.NoFrame);
+        # 设置表格整行选中
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        # 设置垂直方向的表头标签
+        table.setHorizontalHeaderLabels(['Time', 'ID', 'CAR-ID', 'CAR-NAME'])
+        # 设置水平方向表格为自适应的伸缩模式
+        #self.tac_detected.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 将表格变为禁止编辑
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 表格头的显示与隐藏
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStyleSheet('font-family : Times New Roman;font:20px;')
+        table.setMinimumSize(1400, 400)#######设置滚动条的尺寸
+
+        table.tac_name = ""
+        table.tech_name = ""
+        table.itemClicked.connect(self.event_item_clicked)
+
+        event_sets = suspicious_parent[ppid][ppimage]
+
+        home_table = table
+
+        for event_set in event_sets:
+
+            # Home Table
+
+            car_id = event_set['ID']
+            car_name = event_set['Name']
+            time = event_set['Event'][0]['Event']['System']['TimeCreated']['@SystemTime']
+            pid = event_set['Event'][0]['Event']['System']['EventRecordID']
+
+            table_row = home_table.rowCount()
+            home_table.setRowCount(table_row + 1)
+
+            # Time
+
+            new_item=QTableWidgetItem(str(time))
+            new_item.setFont(QFont('Times New Roman',13))
+            new_item.setTextAlignment(Qt.AlignCenter)
+
+            home_table.setItem(table_row, 0, new_item)
+
+            # ID
+
+            new_item=QTableWidgetItem(pid)
+            new_item.setFont(QFont('Times New Roman',13))
+            new_item.setTextAlignment(Qt.AlignCenter)
+
+            home_table.setItem(table_row, 1, new_item)
+
+            # CAR-ID
+
+            new_item=QTableWidgetItem(car_id)
+            new_item.setFont(QFont('Times New Roman',13))
+            new_item.setTextAlignment(Qt.AlignCenter)
+
+            home_table.setItem(table_row, 2, new_item)
+
+            # CAR-NAME
+
+            new_item=QTableWidgetItem(car_name)
+            new_item.setFont(QFont('Times New Roman',13))
+            new_item.setTextAlignment(Qt.AlignCenter)
+
+            home_table.setItem(table_row, 3, new_item)
+
+            QTableWidget.resizeColumnsToContents(home_table)
+            QTableWidget.resizeRowsToContents(home_table)
+
+            row_count += 2 * 1.3
+        layout.addRow(home_table,QLabel())
+
+        # TODO ######################################################################
+        # TODO ######################################################################
+                
+        topFiller.setLayout(layout)
+        topFiller.setMinimumSize(1530, row_count * 20)#######设置滚动条的尺寸
+
+        self.addTab(tab, 'PPID : ' + str(ppid))
         self.setCurrentWidget(tab)
 
         vbox = QVBoxLayout()
@@ -4087,6 +3637,13 @@ class MainWindow(QTabWidget):
             self.create_group_tab(group_or_sw_name)
         else:
             self.create_sw_tab(group_or_sw_name)
+
+    def parent_item_clicked(self, item):
+        # 获取父类
+        parent = item.tableWidget()
+        ppid = parent.item(item.row(), 0).text()
+        ppimage = parent.item(item.row(), 1).text()
+        self.create_parent_tab(ppid, ppimage)
 
     def event_item_clicked(self, item):
         # 获取父类
