@@ -9,12 +9,18 @@ import re
 import json
 import os
 import codecs
-# import pythoncom
-# import wmi
+import pymongo
+from pymongo import MongoClient
 from dateutil import tz
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+
+conn = MongoClient('127.0.0.1')
+db = conn.caldera
+collect = db.event
+
+event_num = collect.count_documents({})
 
 # EvtQuery -> EvtNext -> EvtRender
 
@@ -245,6 +251,53 @@ def home_add_table_row(mainwindow, time, id, event_set):
     QTableWidget.resizeColumnsToContents(home_table)
     QTableWidget.resizeRowsToContents(home_table)
 
+def history_add_table_row(mainwindow, time, id, event_set):
+
+    # Home Table
+
+    car_id = event_set['ID']
+    car_name = event_set['Name']
+
+    history_table = mainwindow.history_table
+
+    table_row = history_table.rowCount()
+    history_table.setRowCount(table_row + 1)
+
+    # Time
+
+    new_item=QTableWidgetItem(str(time))
+    new_item.setFont(QFont('Times New Roman',13))
+    new_item.setTextAlignment(Qt.AlignCenter)
+
+    history_table.setItem(table_row, 0, new_item)
+
+    # ID
+
+    new_item=QTableWidgetItem(id)
+    new_item.setFont(QFont('Times New Roman',13))
+    new_item.setTextAlignment(Qt.AlignCenter)
+
+    history_table.setItem(table_row, 1, new_item)
+
+    # CAR-ID
+
+    new_item=QTableWidgetItem(car_id)
+    new_item.setFont(QFont('Times New Roman',13))
+    new_item.setTextAlignment(Qt.AlignCenter)
+
+    history_table.setItem(table_row, 2, new_item)
+
+    # CAR-NAME
+
+    new_item=QTableWidgetItem(car_name)
+    new_item.setFont(QFont('Times New Roman',13))
+    new_item.setTextAlignment(Qt.AlignCenter)
+
+    history_table.setItem(table_row, 3, new_item)
+
+    QTableWidget.resizeColumnsToContents(history_table)
+    QTableWidget.resizeRowsToContents(history_table)
+
 def append_to_event_dict(evt_dict, event_id, event_set):
     if event_id not in evt_dict:
         evt_dict[event_id] = {}
@@ -295,6 +348,8 @@ def predict_group_or_sw(mainwindow, tech_list):
             break
 
 def change_interface(mainwindow, event_set, event_id, evt_local_time, tac_tech_list):
+    global event_num
+
     tac_list = []
     tech_list = []
 
@@ -329,8 +384,23 @@ def change_interface(mainwindow, event_set, event_id, evt_local_time, tac_tech_l
     append_to_event_dict(mainwindow.home_detected_events, event_id, event_set)
     home_add_table_row(mainwindow, evt_local_time, event_id, event_set)
 
+    # Event History Table
+    history_add_table_row(mainwindow, evt_local_time, event_id, event_set)
+
     # Predict Attacker
     predict_group_or_sw(mainwindow, tech_list)
+
+    event_dict = {}
+    event_dict['ID'] = event_set['ID']
+    event_dict['Name'] = event_set['Name']
+
+    if len(event_set['Event']) > 1:
+        event_dict['Event1'] = event_set['Event'][1]
+    event_dict['Event0'] = event_set['Event'][0]
+
+    # Insert Event Set
+    collect.insert({str(event_num) : event_dict})
+    event_num += 1
 
 '''
 def search_parent_process(proc_id):
@@ -435,6 +505,9 @@ class Sysmon_evt (threading.Thread):
             time.sleep(1) # 이렇게 안해주면 CPU를 너무 많이먹음...
 
     def get_evt_log(self): # 매번 지역변수로 새로 설정해서 매번 갱신을 시켜줘야지만 새로운 이벤트 로그를 받아옴.
+
+        global event_num
+
         path = "Microsoft-Windows-Sysmon/Operational"
         handle = win32evtlog.EvtQuery( # Get event log
                         path,
@@ -624,11 +697,26 @@ class Sysmon_evt (threading.Thread):
                                         append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
                                         home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
 
+                                        # Event History Table
+                                        history_add_table_row(mainwindow, evt_local_time, event_id, event_set)
+
                                         # Predict Attacker
                                         predict_group_or_sw(self.mainwindow, tmp_tech_list)
 
                                         # Home Suspicious Parent
                                         add_suspicious_parent(self.mainwindow, event_set)
+
+                                        # Insert Event Set
+                                        event_dict = {}
+                                        event_dict['ID'] = event_set['ID']
+                                        event_dict['Name'] = event_set['Name']
+
+                                        if len(event_set['Event']) > 1:
+                                            event_dict['Event1'] = event_set['Event'][1]
+                                        event_dict['Event0'] = event_set['Event'][0]
+
+                                        collect.insert({str(event_num) : event_dict})
+                                        event_num += 1
                                         
 
                                     ###############################################################################################
@@ -731,11 +819,26 @@ class Sysmon_evt (threading.Thread):
                                     append_to_event_dict(self.mainwindow.home_detected_events, event_id, event_set)
                                     home_add_table_row(self.mainwindow, evt_local_time, event_id, event_set)
 
+                                    # Event History Table
+                                    history_add_table_row(mainwindow, evt_local_time, event_id, event_set)
+
                                     # Predict Attacker
                                     predict_group_or_sw(self.mainwindow, tmp_tech_list)
 
                                     # Home Suspicious Parent
                                     add_suspicious_parent(self.mainwindow, event_set)
+
+                                    # Insert Event Set
+                                    event_dict = {}
+                                    event_dict['ID'] = event_set['ID']
+                                    event_dict['Name'] = event_set['Name']
+
+                                    if len(event_set['Event']) > 1:
+                                        event_dict['Event1'] = event_set['Event'][1]
+                                    event_dict['Event0'] = event_set['Event'][0]
+                                        
+                                    collect.insert({str(event_num) : event_dict})
+                                    event_num += 1
 
                         ##########################################################################################
 
@@ -2376,6 +2479,14 @@ class MainWindow(QTabWidget):
         self.home_detected_table.tac_name = ""
         self.home_detected_table.tech_name = ""
 
+        # History Event Table
+
+        self.history_table = self.make_detected_table()
+        QTableWidget.resizeColumnsToContents(self.history_table)
+        self.history_table.setMinimumSize(1400, 750)#######设置滚动条的尺寸
+        self.history_table.tac_name = "history_table"
+        self.history_table.tech_name = "history_table"
+
         # Home Detected Events
         self.home_detected_events = {}
 
@@ -2410,15 +2521,19 @@ class MainWindow(QTabWidget):
 
         self.tab1=QWidget()
         self.tab2=QWidget()
+        self.tab3=QWidget()
 
         self.make_matrix()
 
         self.addTab(self.tab1, "Tab 1")
         self.addTab(self.tab2, "ATT&CK Matrix")
+        self.addTab(self.tab3, "History Table")
+
+        self.make_history_table()
 
         self.make_home()
 
-        self.setWindowTitle("ATT&CK")
+        self.setWindowTitle("Mitre ATT&CK Based Network Protect Tool")
 
     def make_predict_table(self):
 
@@ -2549,6 +2664,48 @@ class MainWindow(QTabWidget):
         vbox.addWidget(scroll)
         self.tab2.setLayout(vbox)
 
+    def make_history_table(self):
+        topFiller = QWidget()
+        topFiller.setStyleSheet('background-color: rgb(255, 255, 255);')
+        topFiller.setMinimumSize(1530, 800)#######设置滚动条的尺寸
+
+        #表单布局
+        layout=QFormLayout()
+
+        # Event History Table
+
+        key_label = QLabel('Event History Table')
+        key_label.setStyleSheet('font:30px;'
+            #'font-family : Times New Roman'
+            'padding: 0px;'
+            'font-weight: bold;')
+
+        layout.addRow(key_label,QLabel())
+
+        history = collect.find()
+        for elem in history:
+            for elem_key in elem:
+                if elem_key != '_id':
+                    tmp_time = elem[elem_key]['Event0']['Event']['System']['TimeCreated']['@SystemTime']
+                    tmp_id = elem[elem_key]['Event0']['Event']['System']['EventRecordID']
+                    history_add_table_row(self, tmp_time, tmp_id, elem[elem_key])
+
+        layout.addRow(self.history_table, QLabel())
+        self.history_table.itemClicked.connect(self.event_item_clicked)
+
+        topFiller.setLayout(layout)
+
+        ##创建一个滚动条
+        scroll = QScrollArea()
+        scroll.setStyleSheet('background-color: rgb(255, 255, 255);')
+        scroll.setWidget(topFiller)
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(scroll)
+
+        #设置选项卡的小标题与布局方式
+        self.tab3.setLayout(vbox)
+
 
     def make_home(self):
         topFiller = QWidget()
@@ -2635,9 +2792,9 @@ class MainWindow(QTabWidget):
 
     #关闭tab
     def close_tab(self, index):
-        if self.count()>1 and index != 0 and index != 1:
+        if self.count()>1 and index != 0 and index != 1 and index != 2:
             self.removeTab(index)
-        elif index == 0 or index == 1:
+        elif index == 0 or index == 1 or index == 2:
             # TODO
             print('No')
         else:
@@ -3303,7 +3460,7 @@ class MainWindow(QTabWidget):
         tab.setLayout(vbox)
 
     #创建Event tab
-    def create_event_tab(self, event_id, tac_name, tech_name, car_id, car_name):
+    def create_event_tab(self, event_id, tac_name, tech_name, car_id, car_name, row_num = '-1'):
         tab = QWidget()
         #####
 
@@ -3353,7 +3510,15 @@ class MainWindow(QTabWidget):
         row_count += 2
 
         event_list = []
-        if tac_name == "":
+        if row_num != '-1':
+            # History Table
+            row_num = str(row_num)
+            db_history = collect.find_one({row_num : { '$exists': True }})
+            if 'Event1' in db_history[row_num]:
+                event_list = [db_history[row_num]['Event0'], db_history[row_num]['Event1']]
+            else:
+                event_list = [db_history[row_num]['Event0']]
+        elif tac_name == "":
             # Home Detected Events
             event_list = self.home_detected_events[event_id][car_id]['Event']
         elif tech_name == "":
@@ -3754,7 +3919,10 @@ class MainWindow(QTabWidget):
         car_name= parent.item(item.row(), 3).text()
         tac_name = parent.tac_name
         tech_name = parent.tech_name
-        self.create_event_tab(event_id, tac_name, tech_name, car_id, car_name)
+        if tac_name == 'history_table':
+            self.create_event_tab(event_id, tac_name, tech_name, car_id, car_name, item.row())
+        else:
+            self.create_event_tab(event_id, tac_name, tech_name, car_id, car_name)
 
     def arrange_string(self, arr, split_len):
         result_str = ""
